@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "GW Medidas",
+    "slug": "gw-medidas",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "O GW Medidas usa a câmera para registrar fotos do ambiente durante a medição.",
+        "NSPhotoLibraryUsageDescription": "O GW Medidas acessa sua galeria quando você escolhe adicionar uma foto já existente.",
+        "NSMicrophoneUsageDescription": "O GW Medidas usa o microfone para preencher medidas por voz.",
+        "NSSpeechRecognitionUsageDescription": "O GW Medidas usa reconhecimento de fala para transformar medidas ditadas em campos do projeto."
+      },
+      "bundleIdentifier": "com.garagemwood.gwmedidas"
+    },
+    "android": {
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1118"
+      },
+      "package": "com.garagemwood.gwmedidas"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "version": "6.2.0",
+    "scheme": "gwmedidas",
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Permita que o GW Medidas use o microfone para preencher medidas por voz.",
+          "speechRecognitionPermission": "Permita que o GW Medidas reconheça sua fala para preencher medidas."
+        }
+      ]
+    ]
+  }
+}

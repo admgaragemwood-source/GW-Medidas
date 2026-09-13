@@ -1,0 +1,107 @@
+GW Medidas 6.0.26 — Coluna/Pilar proporcionais e totalmente internos
+
+- Coluna e Pilar agora usam largura e profundidade reais na escala da planta.
+- O bloco fica 100% dentro das quatro linhas do ambiente, inclusive nos cantos.
+- Demais recursos da 6.0.25 preservados.
+
+GW Medidas 6.0.25 — correção final Coluna/Pilar na planta
+- Coluna e Pilar ficam totalmente dentro do ambiente, encostados na face interna da parede.
+- Símbolo técnico compacto, sem caixa de texto sobre a planta.
+- Demais recursos do 6.0.24 preservados.
+
+GW Medidas 6.0.21 — Camadas + coluna dentro da planta
+
+- Restaurado Enviar para trás / Trazer para frente na tela Medida.
+- Camada visual aplicada na planta e vista frontal.
+- Colunas/pilares/estruturas deslocados para dentro do ambiente na planta, evitando ficar metade para fora da parede.
+- Mantidos objetos livres, profundidade de rodapé/sanca, gestos e túnel externo.
+
+GW MEDIDAS — 6.0.8
+
+Correção: desseleção real ao tocar no piso/área vazia e proteção de gestos no iPhone.
+
+GW MEDIDAS — PACOTÃO FUNCIONAL 0.8
+
+OBJETIVO DESTE PACOTE
+Colocar na sua mão uma versão ampla o suficiente para você avaliar o aplicativo como um produto, em vez de testar pedaços isolados.
+
+JÁ FUNCIONA
+• Projetos, clientes e múltiplos ambientes
+• Dados salvos localmente no aparelho
+• Planta geométrica real em SVG
+• Alterar uma medida altera a geometria da planta
+• Arrastar cantos para desenhar ambientes irregulares
+• Adicionar/remover cantos e criar recortes
+• Portas, janelas, tomadas, água, gás, esgoto, pia, fogão, geladeira, ar-condicionado etc.
+• Arrastar objetos entre/ao longo das paredes
+• Largura, altura, peitoril/altura do piso e observações
+• Pilar, shaft e rebaixo de teto
+• Arrastar elementos construtivos
+• Rodapé e sanca por parede
+• Pé-direito e observações gerais
+• Câmera e galeria reais
+• Resumo técnico
+• PDF real + compartilhamento no iPhone
+• Estrutura de dados pronta para futura ponte com GW Assistente
+
+IMPORTANTE SOBRE GEOMETRIA
+A planta passa a ser um polígono de verdade.
+Ao alterar o comprimento de uma parede, o ponto final dela se desloca e a forma muda.
+Como numa planta real, mover um canto também influencia as paredes que encostam naquele canto.
+
+AINDA NÃO É A VERSÃO DE LOJA
+O pacote é uma versão funcional ampla para validação. Antes de publicar ainda precisaremos:
+• autenticação e Supabase/cloud
+• sincronização com GW Assistente
+• acabamento fino de UX
+• anotação gráfica desenhada diretamente sobre fotos
+• calibração/UX avançada de gestos
+• Bluetooth com trena a laser, se decidirmos incluir
+• testes e correções em aparelhos diferentes
+
+COMO INSTALAR
+1. NÃO crie uma pasta nova.
+2. Pare o Expo com Ctrl+C.
+3. Copie App.js, package.json e app.json para a pasta oficial GW-Medidas e substitua.
+4. No CMD livre, dentro de GW-Medidas, execute:
+   npm install
+5. Depois execute:
+   npx expo install --fix
+6. Depois:
+   npm start
+7. Abra no Expo Go.
+
+Se o npm perguntar algo, pare e mande um print antes de confirmar.
+
+
+GW Medidas 6.0.20 — Correção de renderização no acesso web/túnel
+- Correção cirúrgica nos handlers SVG da planta.
+- Preservados objetos livres, profundidade de rodapé/sanca, tela Medida e gestos validados.
+
+
+GW Medidas 6.0.22 — Fechamento da etapa de medição
+- Camadas: Enviar para trás / Trazer para frente.
+- Estruturas na planta posicionadas para dentro do ambiente.
+- Exportação reformulada: planta principal, vistas frontais relevantes, fotos, ficha técnica e notas.
+- Vista em Ângulo removida da prévia e do PDF.
+
+VERSAO 6.1.1
+- Vao/Espaco reservado agora pertence a Biblioteca de Equipamentos.
+- Na Planta usa a mesma logica de posicionamento dos equipamentos.
+- Na vista frontal permanece tracejado para diferenciar reserva de equipamento real.
+- Aberturas continuam exclusivas para Porta, Janela, Passagem e Nicho.
+
+
+=== VOZ 1.0 / DEVELOPMENT BUILD ===
+Esta versão usa expo-speech-recognition e, no celular, precisa do GW Medidas Development Build (não Expo Go).
+A voz foi limitada somente ao preenchimento de medidas.
+Exemplos: “largura 90, altura 1 metro e 90, profundidade 60”; “do piso 85 centímetros”; “90 por 60 por 190”.
+
+Primeira criação do app de desenvolvimento no iPhone (Windows usa EAS Cloud):
+1) npm install
+2) npx expo install --fix
+3) npx eas-cli@latest login
+4) npx eas-cli@latest build --profile development --platform ios
+Após instalar o build no iPhone, iniciar o projeto com:
+set EXPO_UNSTABLE_TUNNEL_V2=1
+npx expo start -c --dev-client --tunnel
