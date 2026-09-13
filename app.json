@@ -27,7 +27,7 @@
     "web": {
       "bundler": "metro"
     },
-    "version": "6.2.0",
+    "version": "6.5.2",
     "scheme": "gwmedidas",
     "plugins": [
       [

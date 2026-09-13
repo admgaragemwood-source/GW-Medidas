@@ -1,6 +1,6 @@
 {
   "name": "gw-medidas",
-  "version": "6.2.0",
+  "version": "6.5.4",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
@@ -13,19 +13,20 @@
     "@expo/metro-runtime": "~57.0.15",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.17",
-    "expo-dev-client": "~57.0.19",
     "expo-image-picker": "~57.0.16",
-    "expo-print": "~57.0.1",
-    "expo-sharing": "~57.0.18",
-    "expo-speech-recognition": "57.0.0",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "expo-print": "~57.0.1",
+    "expo-sharing": "~57.0.18",
+    "jspdf": "^3.0.2",
+    "html2canvas": "^1.4.1",
+    "expo-speech-recognition": "57.0.0",
+    "expo-dev-client": "57.0.18",
+    "@supabase/supabase-js": "^2.57.4"
   },
   "devDependencies": {},
   "private": true

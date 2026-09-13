@@ -1,3 +1,18 @@
+GW Medidas 6.5.0 — Integração GW: Orçamentos → Projetos
+
+- GW Medidas lê clientes, orçamentos e projetos do GW Assistente.
+- Orçamento sem projeto aprovado aparece como medição vinculada a ORÇAMENTO.
+- Quando o orçamento já gerou um Projeto, aparece somente o Projeto, evitando duplicidade.
+- Itens importados removidos no GW Assistente deixam de aparecer após nova sincronização; medições locais são preservadas.
+- Somente leitura: esta versão não grava nada no GW Assistente.
+
+GW Medidas 6.2.2 — Parede com largura + altura e voz contínua
+
+- Edição da parede volta a mostrar as duas dimensões essenciais: largura e altura.
+- Voz da parede aceita as duas medidas na mesma sessão.
+- Altura atualiza a altura do ambiente usada nas vistas, resumo e exportação.
+- Mantidos voz contínua dos itens e todos os comportamentos validados da 6.2.1.
+
 GW Medidas 6.0.26 — Coluna/Pilar proporcionais e totalmente internos
 
 - Coluna e Pilar agora usam largura e profundidade reais na escala da planta.
