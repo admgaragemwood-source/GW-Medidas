@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+// GW Medidas 6.5.5 — refinamento técnico de ambientes, paredes internas e cotas
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -114,7 +115,7 @@ const PLAN_ADD_GROUPS = ['Aberturas','Estruturas','Equipamentos'];
 const FRONT_GROUPS = ['Pontos','Equipamentos','Acabamentos'];
 const INTERNAL_WALL_TYPES = ['Parede horizontal','Parede vertical'];
 const isInternalWall = type => INTERNAL_WALL_TYPES.includes(type);
-const FREE_PLAN_TYPES = ['Mesa','Cadeira','Sofá','Poltrona','Rack','Aparador','Cama solteiro','Cama casal','Cama queen','Cama king','Beliche','Criado-mudo','Guarda-roupa',...INTERNAL_WALL_TYPES];
+const FREE_PLAN_TYPES = ['Mesa','Cadeira','Sofá','Poltrona','Rack','Aparador','Cama solteiro','Cama casal','Cama queen','Cama king','Beliche','Criado-mudo','Guarda-roupa'];
 const isFreePlanType = type => FREE_PLAN_TYPES.includes(type);
 // Parede interna: o vínculo é determinado pela borda do ambiente à qual ela está presa.
 // A=topo, B=direita, C=base, D=esquerda. Isso corrige inclusive paredes criadas
@@ -122,15 +123,13 @@ const isFreePlanType = type => FREE_PLAN_TYPES.includes(type);
 const resolvedInternalWallIndex = (e,room) => {
   if(!isInternalWall(e?.type)) return Number(e?.wall)||0;
   const count=Math.max(1,Number(room?.wallCount||4));
+  const stored=Number(e?.wall);
+  if(Number.isFinite(stored)&&stored>=0&&stored<count) return stored;
+  // Compatibilidade com paredes internas antigas, salvas como elemento livre.
   const fx=clamp(Number.isFinite(e?.freeX)?Number(e.freeX):.5,.05,.95);
   const fy=clamp(Number.isFinite(e?.freeY)?Number(e.freeY):.58,.08,.92);
-  if(e?.type==='Parede vertical'){
-    if(count<3) return 0;
-    return fy>=.5?2:0;
-  }
-  if(count>=4) return fx>=.5?1:3;
-  if(count>=2) return 1;
-  return 0;
+  if(e?.type==='Parede vertical') return count>=3?(fy>=.5?2:0):0;
+  return count>=4?(fx>=.5?1:3):(count>=2?1:0);
 };
 const elementWallIndex = (e,room) => isInternalWall(e?.type)?resolvedInternalWallIndex(e,room):(Number(e?.wall)||0);
 const internalWallThickness = e => {
@@ -138,18 +137,45 @@ const internalWallThickness = e => {
   return clamp(raw,.06,.18);
 };
 const internalWallFrontLeft = (e,wallIndex,room) => {
+  // A parede interna já é ancorada e movimentada pelo campo `left` na Planta.
+  // A vista frontal precisa usar EXATAMENTE a mesma coordenada; usar freeX/freeY
+  // fazia a projeção aparecer em outro ponto (normalmente no meio da parede).
   const wallW=(room?.lengths||[])[wallIndex]||3.2, t=internalWallThickness(e);
-  let n=.5;
-  if(wallIndex===0)n=Number.isFinite(e?.freeX)?e.freeX:.5;
-  else if(wallIndex===1)n=Number.isFinite(e?.freeY)?e.freeY:.5;
-  else if(wallIndex===2)n=1-(Number.isFinite(e?.freeX)?e.freeX:.5);
-  else if(wallIndex===3)n=1-(Number.isFinite(e?.freeY)?e.freeY:.5);
-  return clamp(n*wallW-t/2,0,Math.max(0,wallW-t));
+  return clamp(Number(e?.left||0),0,Math.max(0,wallW-t));
 };
 const frontObjectForRoom = (e,wallIndex,room) => isInternalWall(e?.type)
   ? {...e,wall:wallIndex,width:internalWallThickness(e),height:room?.height||2.65,bottom:0,left:internalWallFrontLeft(e,wallIndex,room),_internalProjection:true}
   : e;
-const visualLayer = e => Number.isFinite(Number(e?.layer)) ? Number(e.layer) : ((GROUPS.find(g=>g.key==='Acabamentos')?.items||[]).includes(e?.type)?0:(isEquipment(e?.type)?2:1));
+
+const alongWallWidth = e => isInternalWall(e?.type)?internalWallThickness(e):Number(e?.width||0);
+const wallAvailableSegments = (room,wallIndex) => {
+  const wallW=Number(room?.lengths?.[wallIndex]||0);
+  if(!(wallW>0)) return [{start:0,end:0,width:0}];
+  const blockers=(room?.elements||[])
+    .filter(e=>isInternalWall(e?.type)&&elementWallIndex(e,room)===wallIndex)
+    .map(e=>{const t=internalWallThickness(e),start=clamp(Number(e.left||0),0,Math.max(0,wallW-t));return {start,end:start+t};})
+    .sort((a,b)=>a.start-b.start);
+  const out=[];let cursor=0;
+  blockers.forEach(b=>{if(b.start-cursor>.03)out.push({start:cursor,end:b.start,width:b.start-cursor});cursor=Math.max(cursor,b.end)});
+  if(wallW-cursor>.03)out.push({start:cursor,end:wallW,width:wallW-cursor});
+  return out.length?out:[{start:0,end:wallW,width:wallW}];
+};
+const wallSegmentForElement = (room,e) => {
+  const wi=elementWallIndex(e,room), wallW=Number(room?.lengths?.[wi]||0);
+  if(!e||isInternalWall(e?.type)||isFreePlanType(e?.type)||e?.free===true||!(wallW>0)) return {start:0,end:wallW,width:wallW,wallIndex:wi};
+  const segments=wallAvailableSegments(room,wi), width=Math.max(.02,Number(e.width||0)), center=Number(e.left||0)+width/2;
+  let seg=segments.find(x=>center>=x.start-.001&&center<=x.end+.001);
+  if(!seg||seg.width<width) seg=segments.filter(x=>x.width>=width).sort((a,b)=>b.width-a.width)[0]||segments.sort((a,b)=>b.width-a.width)[0];
+  return {...seg,wallIndex:wi};
+};
+const constrainElementToWallSegments = (room,e) => {
+  if(!e||isInternalWall(e.type)||isFreePlanType(e.type)||e.free===true) return e;
+  const seg=wallSegmentForElement(room,e), width=Math.max(.02,Number(e.width||0));
+  if(!(seg.width>0)) return e;
+  const maxLeft=Math.max(seg.start,seg.end-width);
+  return {...e,wall:seg.wallIndex,left:clamp(Number(e.left||0),seg.start,maxLeft)};
+};
+const visualLayer = e => isInternalWall(e?.type)?8:(Number.isFinite(Number(e?.layer)) ? Number(e.layer) : ((GROUPS.find(g=>g.key==='Acabamentos')?.items||[]).includes(e?.type)?0:(isEquipment(e?.type)?2:1)));
 
 const DEFAULTS = {
   Porta: { width: .80, height: 2.10, bottom: 0, swing: 'left' },
@@ -256,14 +282,14 @@ function Home({ projects, onNew, onOpen, onDelete, onClients, onHelp, onMore }) 
 }
 
 function NewMeasurement({ projects, onBack, onContinue }) {
-  const [client,setClient]=useState(''); const [project,setProject]=useState(''); const [room,setRoom]=useState(''); const [kind,setKind]=useState('Cozinha'); const [existing,setExisting]=useState(null);
+  const [client,setClient]=useState(''); const [project,setProject]=useState(''); const [room,setRoom]=useState('Cozinha'); const [kind,setKind]=useState('Cozinha'); const [existing,setExisting]=useState(null); const [roomAuto,setRoomAuto]=useState(true);
   const chooseExisting=p=>{setExisting(p.id);setClient(p.client);setProject(p.name)}; const ready=client.trim()&&project.trim()&&room.trim();
   const kinds=[['▦','Cozinha'],['▱','Dormitório'],['♨','Banheiro'],['▤','Sala'],['▧','Área de serviço'],['•••','Outro']];
   return <ScrollView style={styles.screen} keyboardShouldPersistTaps="handled"><View style={styles.simpleTop}><Pressable onPress={onBack}><Text style={styles.simpleBack}>‹</Text></Pressable><Text style={styles.simpleTopTitle}>Novo ambiente</Text><View style={{width:30}}/></View><View style={styles.newEnvPad}>
     {projects.length?<><Text style={styles.newEnvLabel}>Medição existente (opcional)</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>{projects.map(p=><Pressable key={p.id} onPress={()=>chooseExisting(p)} style={[styles.existingChip,existing===p.id&&styles.existingChipOn]}><Text style={[styles.existingChipText,existing===p.id&&{color:BLUE}]}>{p.client} · {p.name}</Text></Pressable>)}</ScrollView></>:null}
-    <Field label="Cliente" value={client} onChangeText={v=>{setClient(v);setExisting(null)}} placeholder="Ex.: João Silva"/><Field label="Projeto" value={project} onChangeText={v=>{setProject(v);setExisting(null)}} placeholder="Ex.: Cozinha - Cliente João"/><Field label="Nome do ambiente" value={room} onChangeText={setRoom} placeholder="Cozinha"/>
-    <Text style={styles.newEnvLabel}>Tipo de ambiente (opcional)</Text><View style={styles.roomTypeGrid}>{kinds.map(([ic,n])=><Pressable key={n} onPress={()=>setKind(n)} style={[styles.roomTypeCard,kind===n&&styles.roomTypeCardOn]}><Text style={[styles.roomTypeIcon,kind===n&&{color:BLUE}]}>{ic}</Text><Text style={[styles.roomTypeText,kind===n&&{color:BLUE}]}>{n}</Text></Pressable>)}</View>
-    <Pressable disabled={!ready} onPress={()=>onContinue({client:client.trim(),project:project.trim(),room:room.trim(),roomType:kind,projectId:existing})} style={[styles.createEnvBtn,!ready&&{opacity:.4}]}><Text style={styles.createEnvText}>Criar ambiente</Text></Pressable>
+    <Field label="Cliente" value={client} onChangeText={v=>{setClient(v);setExisting(null)}} placeholder="Ex.: João Silva"/><Field label="Projeto" value={project} onChangeText={v=>{setProject(v);setExisting(null)}} placeholder="Ex.: Cozinha - Cliente João"/><Field label="Nome do ambiente" value={room} onChangeText={v=>{setRoom(v);setRoomAuto(false)}} placeholder="Cozinha"/>
+    <Text style={styles.newEnvLabel}>Tipo de ambiente (opcional)</Text><View style={styles.roomTypeGrid}>{kinds.map(([ic,n])=><Pressable key={n} onPress={()=>{setKind(n);if(roomAuto||!room.trim()){setRoom(n==='Outro'?'':n);setRoomAuto(n!=='Outro')}}} style={[styles.roomTypeCard,kind===n&&styles.roomTypeCardOn]}><Text style={[styles.roomTypeIcon,kind===n&&{color:BLUE}]}>{ic}</Text><Text style={[styles.roomTypeText,kind===n&&{color:BLUE}]}>{n}</Text></Pressable>)}</View>
+    <Pressable disabled={!ready} onPress={()=>onContinue({client:client.trim(),project:project.trim(),room:room.trim(),roomType:kind,projectId:existing,suggestedWallCount:4})} style={[styles.createEnvBtn,!ready&&{opacity:.4}]}><Text style={styles.createEnvText}>Criar ambiente</Text></Pressable>
   </View></ScrollView>;
 }
 
@@ -329,7 +355,7 @@ function PlanSelectedWallSegments({wall,wallLength,elements=[],walls=[],width,he
   if((mx+nx*20-cx)**2+(my+ny*20-cy)**2 < (mx-nx*20-cx)**2+(my-ny*20-cy)**2){nx=-nx;ny=-ny}
   const relevant=elements.filter(e=>Number(e.wall)===Number(wall.index));
   if(!relevant.length)return null;
-  const cuts=[0,wallLength]; relevant.forEach(e=>{cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+(e.width||0),0,wallLength))});
+  const cuts=[0,wallLength]; relevant.forEach(e=>{const aw=alongWallWidth(e);cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+aw,0,wallLength))});
   const vals=[...new Set(cuts.map(v=>Math.round(v*1000)/1000))].sort((a,b)=>a-b);
   const off=42, extensionStart=7, ext='#A6B3BE', dim='#7F91A1';
   return <Svg style={StyleSheet.absoluteFillObject} width={width} height={height} pointerEvents="none">
@@ -394,7 +420,7 @@ function PlanTechnicalLayer({walls,room,selected,selectedElement,canvasFree,onCh
       const wallLength=Number(w.length||room.lengths?.[i]||0);
       const relevant=(room.elements||[]).filter(e=>Number(e.wall)===Number(w.index));
       const cuts=[0,wallLength];
-      relevant.forEach(e=>{cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+(e.width||0),0,wallLength))});
+      relevant.forEach(e=>{const aw=alongWallWidth(e);cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+aw,0,wallLength))});
       const vals=[...new Set(cuts.map(v=>Math.round(v*1000)/1000))].sort((aa,bb)=>aa-bb);
       const segOff=42, extensionStart=7;
       return <React.Fragment key={`tech-${i}`}>
@@ -437,6 +463,8 @@ function WallMeasureModal({ visible, title, initialWidth, initialHeight, onCance
   const [voiceListening,setVoiceListening]=useState(false),[voiceText,setVoiceText]=useState(''),[voiceMessage,setVoiceMessage]=useState('');
   const voiceSessionRef=useRef(false);
   const voiceOptions={lang:'pt-BR',interimResults:true,continuous:true,maxAlternatives:1,addsPunctuation:false};
+  const isVoiceSaveCommand=t=>/(?:^|\s)(?:salvar|salva|confirmar|confirma|aplicar|aplica)(?:\s+(?:medidas?|medição))?[.! ]*$/i.test(String(t||'').trim());
+  const stripVoiceSaveCommand=t=>String(t||'').replace(/(?:^|\s)(?:salvar|salva|confirmar|confirma|aplicar|aplica)(?:\s+(?:medidas?|medição))?[.! ]*$/i,'').trim();
   useEffect(()=>{setWidthValue(numFmt(initialWidth));setHeightValue(numFmt(initialHeight));if(visible){setVoiceText('');setVoiceMessage('');}},[visible,initialWidth,initialHeight]);
   useEffect(()=>()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}},[]);
   const applyWallVoice=t=>{
@@ -452,13 +480,13 @@ function WallMeasureModal({ visible, title, initialWidth, initialHeight, onCance
     }
     setVoiceMessage(changed.length?`Preenchido: ${changed.join(', ')}.`:'Não encontrei as medidas. Tente: “largura 5 metros e 50, altura 2 metros e 65”.');
   };
-  useSpeechRecognitionEvent('start',()=>{if(visible){setVoiceListening(true);setVoiceMessage('Ouvindo… fale largura e altura e toque em Parar quando terminar.');}});
-  useSpeechRecognitionEvent('result',event=>{if(!visible)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;setVoiceText(prev=>event.isFinal?[prev,t].filter(Boolean).join(' · '):t);if(event.isFinal)applyWallVoice(t);});
+  useSpeechRecognitionEvent('start',()=>{if(visible){setVoiceListening(true);setVoiceMessage('Ouvindo… fale as medidas e diga “salvar” ou “confirmar” quando terminar.');}});
+  useSpeechRecognitionEvent('result',event=>{if(!visible)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;const command=event.isFinal&&isVoiceSaveCommand(t), spoken=stripVoiceSaveCommand(t);setVoiceText(prev=>event.isFinal?[prev,t].filter(Boolean).join(' · '):t);if(event.isFinal&&spoken)applyWallVoice(spoken);if(command){const values=extractVoiceMeasures(spoken);const nextW=values.width!=null?values.width:parseMeters(widthValue,initialWidth),nextH=values.height!=null?values.height:parseMeters(heightValue,initialHeight);voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}setVoiceListening(false);setVoiceMessage('Medidas confirmadas por voz. Salvando…');setTimeout(()=>onSave(clamp(nextW,.05,20),clamp(nextH,.05,10)),80);}});
   useSpeechRecognitionEvent('end',()=>{if(!visible)return;setVoiceListening(false);if(voiceSessionRef.current){setTimeout(()=>{if(voiceSessionRef.current&&visible){try{ExpoSpeechRecognitionModule.start(voiceOptions);}catch(_e){} }},180);}});
   useSpeechRecognitionEvent('error',event=>{if(!visible)return;if(event.error==='aborted')return;if(event.error==='no-speech'&&voiceSessionRef.current)return;voiceSessionRef.current=false;setVoiceListening(false);setVoiceMessage('Não consegui ouvir. Toque em Falar e tente novamente.');});
   const toggleVoice=async()=>{try{if(voiceSessionRef.current||voiceListening){voiceSessionRef.current=false;ExpoSpeechRecognitionModule.stop();setVoiceListening(false);setVoiceMessage('Ditado concluído. Confira largura e altura antes de aplicar.');return;}const permission=await ExpoSpeechRecognitionModule.requestPermissionsAsync();if(!permission.granted){Alert.alert('Microfone','Autorize o microfone para ditar as medidas.');return;}setVoiceText('');setVoiceMessage('');voiceSessionRef.current=true;ExpoSpeechRecognitionModule.start(voiceOptions);}catch(e){voiceSessionRef.current=false;console.warn('voice wall',e);Alert.alert('Voz','Não foi possível iniciar o reconhecimento de voz.');}};
   const apply=()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onSave(clamp(parseMeters(widthValue,initialWidth),.05,20),clamp(parseMeters(heightValue,initialHeight),.05,10));};
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined}><Pressable style={{flex:1}} onPress={onCancel}/><View style={[styles.sheet,styles.techEditSheet]}><View style={styles.sheetHandle}/><View style={styles.techEditHead}><View style={styles.wallEditIcon}><Text style={styles.wallEditIconText}>↔</Text></View><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{title}</Text><Text style={styles.formHint}>Largura e altura reais da parede</Text></View></View><View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite ou fale a largura e a altura da parede. Você pode conferir antes de aplicar.</Text></View><View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… toque em Parar ao terminar.':'Ex.: “largura 5 metros e 50, altura 2 metros e 65”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View><Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={widthValue} onChange={setWidthValue}/><MiniField label="Altura" value={heightValue} onChange={setHeightValue}/></View><View style={{flexDirection:'row',gap:10,marginTop:16}}><Button secondary title="Cancelar" onPress={()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onCancel();}}/><Button title="Aplicar" onPress={apply}/></View></View></KeyboardAvoidingView></Modal>;
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined}><Pressable style={{flex:1}} onPress={onCancel}/><View style={[styles.sheet,styles.techEditSheet]}><View style={styles.sheetHandle}/><View style={styles.techEditHead}><View style={styles.wallEditIcon}><Text style={styles.wallEditIconText}>↔</Text></View><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{title}</Text><Text style={styles.formHint}>Largura e altura reais da parede</Text></View></View><View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite ou fale a largura e a altura da parede. Você pode conferir antes de aplicar.</Text></View><View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… ao terminar diga “salvar” ou “confirmar”.':'Ex.: “largura 5 metros e 50, altura 2 metros e 65, salvar”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View><Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={widthValue} onChange={setWidthValue}/><MiniField label="Altura" value={heightValue} onChange={setHeightValue}/></View><View style={{flexDirection:'row',gap:10,marginTop:16}}><Button secondary title="Cancelar" onPress={()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onCancel();}}/><Button title="Aplicar" onPress={apply}/></View></View></KeyboardAvoidingView></Modal>;
 }
 
 function ItemIcon({ type, size=30 }) { return <View style={[styles.itemIcon,{width:size,height:size,borderRadius:size*.28}]}><Text style={{fontSize:size*.48}}>{ICONS[type]||'•'}</Text></View>; }
@@ -577,46 +605,47 @@ function planInteriorVector(count,index){
 }
 
 function PlanEquipmentElement({element, wall, wallLength, wallCount, zoom, selected, onSelect, onChange, pinchingRef, canvasW, canvasH, planPpm}){
-  const free=isFreePlanType(element.type)||element.free===true;
+  const internal=isInternalWall(element.type);
+  const free=!internal&&(isFreePlanType(element.type)||element.free===true);
   const dx=wall?.b?.x-wall?.a?.x||1,dy=wall?.b?.y-wall?.a?.y||0,pixLen=Math.max(1,Math.hypot(dx,dy));
   const ux=dx/pixLen,uy=dy/pixLen,nx=-uy,ny=ux;
   const ppm=free?Math.max(20,planPpm||70):pixLen/Math.max(.1,wallLength);
   const inward=planInteriorVector(wallCount,element.wall),sign=(nx*inward[0]+ny*inward[1])>=0?1:-1;
-  const internal=isInternalWall(element.type), verticalInternal=element.type==='Parede vertical';
-  const internalThickPx=internal?10:0; // mesma espessura gráfica das paredes fixas da planta
-  const internalLenPx=internal?clamp((verticalInternal?Number(element.depth||1.50):Number(element.width||1.50))*ppm,24,220):0;
-  const depthPx=internal?(verticalInternal?internalLenPx:internalThickPx):clamp((element.depth||.55)*ppm,18,72);
-  const visualW=internal?(verticalInternal?internalThickPx:internalLenPx):clamp(element.width*ppm,28,140);
-  const t=clamp((element.left+element.width/2)/Math.max(.1,wallLength),0,1);
-  const anchoredX=(wall?.a?.x||0)+dx*t+nx*sign*depthPx/2,anchoredY=(wall?.a?.y||0)+dy*t+ny*sign*depthPx/2;
+  const internalThick=internal?internalWallThickness(element):0;
+  const internalThickPx=internal?10:0;
+  const internalLenM=internal?(element.type==='Parede vertical'?Number(element.depth||1.50):Number(element.width||1.50)):0;
+  const internalLenPx=internal?clamp(internalLenM*ppm,24,220):0;
+  const depthPx=internal?internalThickPx:clamp((element.depth||.55)*ppm,18,72);
+  const visualW=internal?internalLenPx:clamp(element.width*ppm,28,140);
+  const anchorSize=internal?internalThick:Number(element.width||0);
+  const t=clamp((Number(element.left||0)+anchorSize/2)/Math.max(.1,wallLength),0,1);
+  const anchorX=(wall?.a?.x||0)+dx*t,anchorY=(wall?.a?.y||0)+dy*t;
+  const anchoredX=internal?anchorX+nx*sign*internalLenPx/2:anchorX+nx*sign*depthPx/2;
+  const anchoredY=internal?anchorY+ny*sign*internalLenPx/2:anchorY+ny*sign*depthPx/2;
   const freeX=clamp(Number.isFinite(element.freeX)?element.freeX:.50,.05,.95),freeY=clamp(Number.isFinite(element.freeY)?element.freeY:.58,.08,.92);
   const x=free?freeX*(canvasW||1):anchoredX,y=free?freeY*(canvasH||1):anchoredY;
-  const angle=free?0:Math.atan2(dy,dx)*180/Math.PI,start=useRef(element.left),freeStart=useRef({x:freeX,y:freeY});
+  const baseAngle=Math.atan2(dy,dx)*180/Math.PI;
+  const angle=free?0:(internal?baseAngle+90:baseAngle),start=useRef(element.left),freeStart=useRef({x:freeX,y:freeY});
   const pan=Gesture.Pan().minDistance(7).activateAfterLongPress(70).maxPointers(1).runOnJS(true).onBegin(()=>{
-    start.current=element.left;freeStart.current={x:freeX,y:freeY};
+    start.current=Number(element.left||0);freeStart.current={x:freeX,y:freeY};
   }).onUpdate(e=>{
     if(pinchingRef?.current)return;
     if(free){
       const nxp=clamp(freeStart.current.x+(e.translationX/Math.max(.8,zoom))/Math.max(1,canvasW),.05,.95);
       const nyp=clamp(freeStart.current.y+(e.translationY/Math.max(.8,zoom))/Math.max(1,canvasH),.08,.92);
-      let nextWall=element.wall;
-      if(internal){
-        if(verticalInternal) nextWall=(wallCount>=3?(nyp>=.5?2:0):0);
-        else nextWall=(wallCount>=4?(nxp>=.5?1:3):(wallCount>=2?1:0));
-      }
-      onChange({...element,free:true,freeX:nxp,freeY:nyp,wall:nextWall});
+      onChange({...element,free:true,freeX:nxp,freeY:nyp});
       return;
     }
     const deltaPx=(e.translationX*ux+e.translationY*uy)/Math.max(.8,zoom);
-    const left=clamp(start.current+deltaPx/ppm,0,Math.max(0,wallLength-element.width));onChange({...element,left});
+    const occupied=internal?internalThick:Number(element.width||0);
+    const left=clamp(start.current+deltaPx/ppm,0,Math.max(0,wallLength-occupied));
+    onChange({...element,free:internal?false:element.free,left,wall:element.wall});
   });
   const tap=Gesture.Tap().maxDistance(8).runOnJS(true).onEnd((_e,ok)=>{if(ok)onSelect()});
   const objectGesture=selected?Gesture.Exclusive(pan,tap):tap;
   const stroke=selected?BLUE:'#5C6872',fill=selected?'rgba(22,119,242,.12)':'rgba(88,104,116,.07)';
   const icon=()=>{
-    if(internal)return verticalInternal
-      ? <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x={Math.max(1,(visualW-5.2)/2)} y="0" width={Math.max(1,Math.min(5.2,visualW-2))} height={depthPx} fill={WHITE}/></>
-      : <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x="0" y={Math.max(1,(depthPx-5.2)/2)} width={visualW} height={Math.max(1,Math.min(5.2,depthPx-2))} fill={WHITE}/></>;
+    if(internal)return <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x="0" y={Math.max(1,(depthPx-5.2)/2)} width={visualW} height={Math.max(1,Math.min(5.2,depthPx-2))} fill={WHITE}/></>;
     if(isReservedSpace(element.type))return <><Rect x="3" y="3" width={Math.max(2,visualW-6)} height={Math.max(2,depthPx-6)} rx="2" fill="rgba(255,255,255,.18)" stroke={stroke} strokeWidth={selected?1.8:1.2} strokeDasharray="5 3"/><Line x1="7" y1={depthPx/2} x2={Math.max(7,visualW-7)} y2={depthPx/2} stroke="#8A98A3" strokeWidth=".6" strokeDasharray="3 3"/></>;
     if(element.type==='Pia'||element.type==='Tanque')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(238,244,247,.82)" stroke={stroke} strokeWidth="1"/><Rect x={visualW*.30} y={depthPx*.24} width={visualW*.40} height={depthPx*.52} rx="3" fill="rgba(188,207,216,.55)" stroke="#6E8089" strokeWidth=".8"/><Path d={`M ${visualW*.50} ${depthPx*.24} q 0 ${-depthPx*.18} ${visualW*.12} ${-depthPx*.18}`} fill="none" stroke="#596A73" strokeWidth="1.1"/></>;
     if(element.type==='Fogão'||element.type==='Cooktop')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(58,66,72,.12)" stroke={stroke} strokeWidth="1"/>{[[.28,.33],[.72,.33],[.28,.68],[.72,.68]].map((p,i)=><Circle key={i} cx={visualW*p[0]} cy={depthPx*p[1]} r={Math.max(2,Math.min(5,depthPx*.12))} fill="none" stroke="#46525A" strokeWidth="1"/>)}</>;
@@ -830,12 +859,15 @@ function PlanEditor({ project, room, draftMeta, onBack, onSave, onSaveExit, onCh
   const updateWallMeasurements=(i,width,height)=>{const lengths=[...room.lengths];lengths[i]=width;onSave({...room,lengths,height},false);setEditWall(null)};
   const changeCount=n=>{let lengths=[...room.lengths];while(lengths.length<n) lengths.push(lengths.length%2===0?3.2:2.8);lengths=lengths.slice(0,n);const elements=(room.elements||[]).filter(e=>isFreePlanType(e.type)||e.free===true||e.wall<n);setSelected(Math.min(selected,n-1));onSave({...room,wallCount:n,lengths,elements},false)};
   const openGroup=g=>{setAddGroup(g);setAddOpen(true)};
-  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const wallW=room.lengths[selected]||3;const free=isFreePlanType(type);const internal=isInternalWall(type);const anchorWall=selected;let freeX=.50,freeY=.58;if(internal&&walls[anchorWall]){const w=walls[anchorWall],midX=(w.a.x+w.b.x)/2,midY=(w.a.y+w.b.y)/2,inward=planInteriorVector(room.wallCount||4,anchorWall),ppm=Math.max(20,Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y)/Math.max(.1,room.lengths[anchorWall]||1)),lenM=type==='Parede vertical'?Number(d.depth||1.50):Number(d.width||1.50),halfPx=lenM*ppm/2;freeX=clamp((midX+inward[0]*halfPx)/canvasW,.05,.95);freeY=clamp((midY+inward[1]*halfPx)/canvasH,.08,.92);}const el={id:uid(),type,wall:anchorWall,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,swing:d.swing||undefined,left:clamp((wallW-d.width)/2,0,wallW),...(free?{free:true,freeX,freeY}:{})};onSave({...room,elements:[...(room.elements||[]),el]},false);setSelectedElement(el.id);setCanvasFree(false);setAddOpen(false)};
-  const updateElement=o=>onSave({...room,elements:(room.elements||[]).map(e=>e.id===o.id?o:e)},false);
+  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const wallW=room.lengths[selected]||3;const free=isFreePlanType(type);const internal=isInternalWall(type);const anchorWall=selected;let left=0;
+    if(internal){const t=internalWallThickness({...d,type});left=clamp((wallW-t)/2,0,Math.max(0,wallW-t));}
+    else if(!free){const segments=wallAvailableSegments(room,anchorWall).filter(seg=>seg.width>=Number(d.width||.2));const seg=(segments.length?segments:wallAvailableSegments(room,anchorWall)).sort((a,b)=>b.width-a.width)[0]||{start:0,end:wallW,width:wallW};left=clamp(seg.start+(seg.width-Number(d.width||.2))/2,seg.start,Math.max(seg.start,seg.end-Number(d.width||.2)));}
+    const el={id:uid(),type,wall:anchorWall,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,swing:d.swing||undefined,left,...(free?{free:true,freeX:.50,freeY:.58}:{free:false})};onSave({...room,elements:[...(room.elements||[]),el]},false);setSelectedElement(el.id);setCanvasFree(false);setAddOpen(false)};
+  const updateElement=o=>{const fixed=constrainElementToWallSegments(room,o);onSave({...room,elements:(room.elements||[]).map(e=>e.id===fixed.id?fixed:e)},false)};
   const deleteSelected=()=>{if(!selectedElement)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onSave({...room,elements:(room.elements||[]).filter(e=>e.id!==selectedElement)},false);setSelectedElement(null);setEditElementOpen(false)});};
-  const selectedWall=walls[selected], selectedObj=(room.elements||[]).find(e=>e.id===selectedElement), options=[{n:1,label:'1',shape:'—'},{n:2,label:'2',shape:'⌞'},{n:3,label:'3',shape:'⊔'},{n:4,label:'4',shape:'□'}];
+  const selectedWall=walls[selected], selectedObj=(room.elements||[]).find(e=>e.id===selectedElement), selectedSegment=selectedObj?wallSegmentForElement(room,selectedObj):null, modalObj=(selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?{...selectedObj,left:Number(selectedObj.left||0)-selectedSegment.start}:selectedObj, options=[{n:1,label:'1',shape:'—'},{n:2,label:'2',shape:'⌞'},{n:3,label:'3',shape:'⊔'},{n:4,label:'4',shape:'□'}];
   const frontW=room.lengths[selected]||3.2, frontH=room.height||2.65, frontPx=Math.min((canvasW-54)/frontW,(canvasH-56)/frontH),
-    frontObjects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===selected&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(e,selected,room));
+    frontObjects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===selected&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(constrainElementToWallSegments(room,e),selected,room));
   const planPpm=walls?.length?Math.max(20,Math.hypot(walls[0].b.x-walls[0].a.x,walls[0].b.y-walls[0].a.y)/Math.max(.1,room.lengths?.[0]||1)):70;
   const frontUpdate=o=>updateElement(o);
   function freeCanvas(){setSelectedElement(null);setCanvasFree(true);setFocusedCota(null)}
@@ -855,7 +887,7 @@ function PlanEditor({ project, room, draftMeta, onBack, onSave, onSaveExit, onCh
     <View style={styles.categoryDock}>{GROUPS.filter(g=>(viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS).includes(g.key)).map(g=><Pressable key={g.key} onPress={()=>openGroup(g.key)} style={styles.categoryBtn}><Text style={styles.categoryIcon}>{g.icon}</Text><Text style={styles.categoryText}>{g.key}</Text></Pressable>)}</View>
     <View style={styles.finishDock}><Pressable onPress={onPhotos} style={styles.finishBtn}><Text style={styles.finishIcon}>📷</Text><Text style={styles.finishText}>Fotos</Text></Pressable><Pressable onPress={()=>setNotesOpen(true)} style={styles.finishBtn}><Text style={styles.finishIcon}>✎</Text><Text style={styles.finishText}>Notas</Text></Pressable><Pressable onPress={()=>setSummaryOpen(true)} style={styles.finishBtn}><Text style={styles.finishIcon}>☷</Text><Text style={styles.finishText}>Resumo</Text></Pressable><Pressable onPress={onFinish} style={[styles.finishBtn,styles.finishBtnPrimary]}><Text style={[styles.finishIcon,{color:WHITE}]}>✓</Text><Text style={[styles.finishText,{color:WHITE}]}>Concluir</Text></Pressable></View>
     {selectedObj?<View style={styles.adjustRow}><Text style={styles.dragHint}>{selectedObj.type} selecionado · use Ajustar para editar</Text><Pressable onPress={deleteSelected} style={styles.quickDelete}><Text style={styles.quickDeleteText}>Excluir</Text></Pressable></View>:null}
-    <NotesModal visible={notesOpen} initial={room.notes||''} onClose={()=>setNotesOpen(false)} onSave={notes=>onSave({...room,notes},false)}/><SummaryModal visible={summaryOpen} room={room} onClose={()=>setSummaryOpen(false)}/><WallMeasureModal visible={editWall!==null} title={`Parede ${String.fromCharCode(65+(editWall||0))}`} initialWidth={editWall!==null?(room.lengths[editWall]||0):0} initialHeight={room.height||2.65} onCancel={()=>setEditWall(null)} onSave={(width,height)=>updateWallMeasurements(editWall,width,height)}/><AddSheet visible={addOpen} initialGroup={addGroup} allowedGroups={viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS} excludedItems={viewMode==='front'?FREE_PLAN_TYPES:[]} onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={selected}/><ObjectModal visible={editElementOpen} object={selectedObj} wallW={room.lengths[selected]||3.2} wallH={room.height||2.65} onClose={()=>setEditElementOpen(false)} onSave={updateElement} onDelete={deleteSelected}/>
+    <NotesModal visible={notesOpen} initial={room.notes||''} onClose={()=>setNotesOpen(false)} onSave={notes=>onSave({...room,notes},false)}/><SummaryModal visible={summaryOpen} room={room} onClose={()=>setSummaryOpen(false)}/><WallMeasureModal visible={editWall!==null} title={`Parede ${String.fromCharCode(65+(editWall||0))}`} initialWidth={editWall!==null?(room.lengths[editWall]||0):0} initialHeight={room.height||2.65} onCancel={()=>setEditWall(null)} onSave={(width,height)=>updateWallMeasurements(editWall,width,height)}/><AddSheet visible={addOpen} initialGroup={addGroup} allowedGroups={viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS} excludedItems={viewMode==='front'?FREE_PLAN_TYPES:[]} onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={selected}/><ObjectModal visible={editElementOpen} object={modalObj} wallW={(selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?selectedSegment.width:(room.lengths[elementWallIndex(selectedObj||{wall:selected},room)]||3.2)} wallH={room.height||2.65} onClose={()=>setEditElementOpen(false)} onSave={o=>updateElement((selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?{...o,left:Number(o.left||0)+selectedSegment.start}:o)} onDelete={deleteSelected}/>
   </View>;
 }
 
@@ -882,7 +914,7 @@ function PlanPreviewStatic({room,width=360,height=230}){
 }
 function FrontPreviewStatic({room,wallIndex=0,width=360,height=230}){
   const wallW=room.lengths[wallIndex]||3.2,wallH=room.height||2.65,px=Math.min((width-60)/wallW,(height-60)/wallH),
-    objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(e,wallIndex,room)).sort((a,b)=>visualLayer(a)-visualLayer(b));
+    objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):constrainElementToWallSegments(room,e)).sort((a,b)=>visualLayer(a)-visualLayer(b));
   return <View style={{width,height,overflow:'hidden',borderRadius:12}}><TechnicalElevationBase wallW={wallW} wallH={wallH} px={px} width={width} height={height}/>{objects.map(o=>{const opening=isOpening(o.type),equip=isEquipment(o.type),reserved=isReservedSpace(o.type),structure=isStructure(o.type),point=isPoint(o.type),internal=isInternalWall(o.type),vw=internal?Math.max(5,o.width*px):Math.max(o.width*px,opening||equip||reserved?28:18),vh=internal?Math.max(20,o.height*px):(o.type==='Pia'?Math.max(o.height*px,12):Math.max(o.height*px,opening||equip||reserved?26:18)),x=27+o.left*px,y=46+(wallH-o.bottom-o.height)*px;return <View key={o.id} pointerEvents="none" style={{position:'absolute',left:x,top:y,width:vw,height:vh,borderWidth:internal?1.4:1,borderColor:internal?'#59636B':'#5B6670',backgroundColor:internal?'#D4D9DD':point?'transparent':'rgba(255,255,255,.2)',zIndex:visualLayer(o)}}>{internal?null:<ElementVisual type={o.type} width={vw} height={vh}/>}</View>})}</View>;
 }
 function ExportPreview({project,room,onBack,onExport}){
@@ -934,14 +966,16 @@ function ObjectModal({ visible, object, wallW, wallH, onClose, onSave, onDelete 
   const diagramDragStart=useRef(0);
   const voiceSessionRef=useRef(false);
   const voiceOptions={lang:'pt-BR',interimResults:true,continuous:true,maxAlternatives:1,addsPunctuation:false};
+  const isVoiceSaveCommand=t=>/(?:^|\s)(?:salvar|salva|confirmar|confirma)(?:\s+(?:medidas?|medição))?[.! ]*$/i.test(String(t||'').trim());
+  const stripVoiceSaveCommand=t=>String(t||'').replace(/(?:^|\s)(?:salvar|salva|confirmar|confirma)(?:\s+(?:medidas?|medição))?[.! ]*$/i,'').trim();
   useEffect(()=>{if(object){
     const ow=Number(object.width||0),oh=Number(object.height||0),ol=Number(object.left||0),ob=Number(object.bottom||0);
     setW(numFmt(ow));setH(numFmt(oh));setLeft(numFmt(ol));setRight(numFmt(Math.max(0,wallW-ol-ow)));setBottom(numFmt(ob));setTop(numFmt(Math.max(0,wallH-ob-oh)));setDepth(numFmt(object.depth||.15));setThickness(numFmt(object.thickness||.03));setSwing(object.swing||'left');setLayer(visualLayer(object));
   }},[visible,object?.id,wallW,wallH]);
   useEffect(()=>()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}},[]);
-  useSpeechRecognitionEvent('start',()=>{if(visible&&object){setVoiceListening(true);setVoiceMessage('Ouvindo… fale todas as medidas e toque em Parar quando terminar.')}});
+  useSpeechRecognitionEvent('start',()=>{if(visible&&object){setVoiceListening(true);setVoiceMessage('Ouvindo… fale todas as medidas e diga “salvar” ou “confirmar” quando terminar.')}});
   useSpeechRecognitionEvent('end',()=>{if(!visible||!object)return;setVoiceListening(false);if(voiceSessionRef.current){setTimeout(()=>{if(voiceSessionRef.current&&visible){try{ExpoSpeechRecognitionModule.start(voiceOptions);}catch(_e){} }},180);}});
-  useSpeechRecognitionEvent('result',event=>{if(!visible||!object)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;if(event.isFinal){setVoiceText(prev=>[prev,t].filter(Boolean).join(' · '));applyVoiceMeasures(t);}else setVoiceText(t);});
+  useSpeechRecognitionEvent('result',event=>{if(!visible||!object)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;if(event.isFinal){const command=isVoiceSaveCommand(t),spoken=stripVoiceSaveCommand(t);setVoiceText(prev=>[prev,t].filter(Boolean).join(' · '));if(spoken)applyVoiceMeasures(spoken);if(command){const v=extractVoiceMeasures(spoken);const nw=clamp(v.width!=null?v.width:parseMeters(w,object.width),.02,wallW),nh=clamp(v.height!=null?v.height:parseMeters(h,object.height),.02,wallH),nl=clamp(v.left!=null?v.left:(v.right!=null?wallW-v.right-nw:parseMeters(left,object.left)),0,Math.max(0,wallW-nw)),nb=clamp(v.bottom!=null?v.bottom:(v.top!=null?wallH-v.top-nh:parseMeters(bottom,object.bottom)),0,Math.max(0,wallH-nh));voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}setVoiceListening(false);setVoiceMessage('Medidas confirmadas por voz. Salvando…');const saved={...object,width:nw,height:nh,left:nl,bottom:nb,depth:hasDepth?clamp(v.depth!=null?v.depth:parseMeters(depth,object.depth||.15),.01,5):object.depth,thickness:object.type==='Pia'?clamp(v.thickness!=null?v.thickness:parseMeters(thickness,object.thickness||.03),.005,.5):object.thickness,swing:object.type==='Porta'?swing:object.swing,layer};setTimeout(()=>{onSave(saved);onClose();},80);}}else setVoiceText(t);});
   useSpeechRecognitionEvent('error',event=>{if(!visible||!object)return;if(event.error==='aborted')return;if(event.error==='no-speech'&&voiceSessionRef.current)return;voiceSessionRef.current=false;setVoiceListening(false);setVoiceMessage('Não consegui ouvir. Toque no microfone e tente novamente.');});
   if(!object)return null;
   const hasDepth=isEquipment(object.type)||isStructure(object.type)||isReservedSpace(object.type)||['Rodapé','Sanca'].includes(object.type);
@@ -979,7 +1013,7 @@ function ObjectModal({ visible, object, wallW, wallH, onClose, onSave, onDelete 
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={8}><Pressable style={{flex:1}} onPress={onClose}/><View style={[styles.sheet,styles.techEditSheet,{maxHeight:RAW_H*.88}]}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{paddingBottom:Platform.OS==='ios'?34:14}} showsVerticalScrollIndicator={false}><View style={styles.sheetHandle}/>
     <View style={styles.techEditHead}><ItemIcon type={object.type} size={46}/><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{object.type}</Text><Text style={styles.formHint}>{freeObject?'Livre no ambiente · dimensões técnicas':`Parede ${String.fromCharCode(65+object.wall)} · ${mFmt(wallW)} × ${mFmt(wallH)}`}</Text></View>{onDelete?<Pressable onPress={onDelete} style={styles.deletePill}><Text style={styles.deletePillText}>Excluir</Text></Pressable>:null}</View>
     <View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite a medida real. As distâncias opostas são recalculadas para conferência.</Text></View>
-    <View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… toque em Parar ao terminar.':'Ex.: “largura 1,80, profundidade 60, espessura 3, do piso 90”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View>
+    <View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… ao terminar diga “salvar” ou “confirmar”.':'Ex.: “largura 1,80, profundidade 60, do piso 90, salvar”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View>
     <Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={w} onChange={setWidthSmart}/><MiniField label="Altura" value={h} onChange={setHeightSmart}/>{hasDepth?<MiniField label="Profundidade" value={depth} onChange={setDepth}/>:null}{object.type==='Pia'?<MiniField label="Espessura" value={thickness} onChange={setThickness}/>:null}</View>
     <Text style={styles.formSection}>Camada visual</Text><View style={styles.swingRow}><Pressable onPress={()=>setLayer(0)} style={[styles.swingOption,layer<=0&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,layer<=0&&styles.swingOptionTextOn]}>Enviar para trás</Text></Pressable><Pressable onPress={()=>setLayer(5)} style={[styles.swingOption,layer>0&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,layer>0&&styles.swingOptionTextOn]}>Trazer para frente</Text></Pressable></View>
     {object.type==='Porta'?<><Text style={styles.formSection}>Sentido de abertura</Text><Text style={styles.formHint}>A folha abre para dentro do ambiente.</Text><View style={styles.swingRow}><Pressable onPress={()=>setSwing('left')} style={[styles.swingOption,swing==='left'&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,swing==='left'&&styles.swingOptionTextOn]}>↙ Esquerda</Text></Pressable><Pressable onPress={()=>setSwing('right')} style={[styles.swingOption,swing==='right'&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,swing==='right'&&styles.swingOptionTextOn]}>Direita ↘</Text></Pressable></View></>:null}
@@ -995,11 +1029,18 @@ function MiniField({label,value,onChange}){return <View style={styles.miniField}
 function Elevation({ project, room, wallIndex, onBack, onUpdateRoom }) {
   const wallW=room.lengths[wallIndex]||3.2, wallH=room.height||2.65, boardW=APP_W-24, boardH=Math.min(500,RAW_H*.56); const px=Math.min((boardW-54)/wallW,(boardH-72)/wallH);
   const [selectedId,setSelectedId]=useState(null),[editOpen,setEditOpen]=useState(false),[addOpen,setAddOpen]=useState(false); const [zoom,setZoom]=useState(1),[offset,setOffset]=useState({x:0,y:0}); const pinchStart=useRef(1),panStart=useRef({x:0,y:0});
-  const objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):e), selected=objects.find(e=>e.id===selectedId);
-  const updateObj=o=>onUpdateRoom({...room,elements:(room.elements||[]).map(x=>x.id===o.id?o:x)},false);
-  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const o={id:uid(),type,wall:wallIndex,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,left:clamp((wallW-d.width)/2,0,wallW)};onUpdateRoom({...room,elements:[...(room.elements||[]),o]},false);setSelectedId(o.id);setAddOpen(false)};
+  const objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):constrainElementToWallSegments(room,e)), selected=objects.find(e=>e.id===selectedId);
+  const updateObj=o=>{
+    const original=(room.elements||[]).find(x=>x.id===o.id);
+    // A parede interna é posicionada na Planta. Na vista frontal ela é apenas uma
+    // projeção técnica do ponto de encontro, evitando que um arraste frontal
+    // altere a geometria validada da Planta.
+    const next=isInternalWall(original?.type)?original:constrainElementToWallSegments(room,o);
+    onUpdateRoom({...room,elements:(room.elements||[]).map(x=>x.id===o.id?next:x)},false);
+  };
+  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const raw={id:uid(),type,wall:wallIndex,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,left:clamp((wallW-d.width)/2,0,wallW)};const o=constrainElementToWallSegments(room,raw);onUpdateRoom({...room,elements:[...(room.elements||[]),o]},false);setSelectedId(o.id);setAddOpen(false)};
   const pinch=Gesture.Pinch().runOnJS(true).onBegin(()=>pinchStart.current=zoom).onUpdate(e=>setZoom(clamp(pinchStart.current*e.scale,.8,3.4)));const pan=Gesture.Pan().minPointers(2).runOnJS(true).onBegin(()=>panStart.current=offset).onUpdate(e=>setOffset({x:panStart.current.x+e.translationX,y:panStart.current.y+e.translationY}));const gesture=Gesture.Simultaneous(pinch,pan);
-  return <View style={styles.editorScreen}><View style={styles.editorTop}><Pressable onPress={onBack}><Text style={styles.back}>‹ Planta</Text></Pressable><View style={{flex:1,marginHorizontal:10}}><Text style={styles.editorTitle}>Parede {String.fromCharCode(65+wallIndex)}</Text><Text style={styles.editorSub}>{mFmt(wallW)} × {mFmt(wallH)} · {room.name}</Text></View><Pressable onPress={()=>onUpdateRoom(room,true)} style={styles.saveBtn}><Text style={styles.saveBtnText}>Salvar</Text></Pressable></View><View style={styles.toolBar}><Text style={styles.toolLabel}>Arraste para pré-posicionar · toque para editar com precisão</Text><Text style={styles.zoomBadge}>{Math.round(zoom*100)}%</Text></View><GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:boardW,height:boardH}]}><View style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><View style={[styles.wallFace,{left:27,top:28,width:wallW*px,height:wallH*px}]}/><View pointerEvents="none" style={[styles.wallWidthCota,{left:27,top:4,width:wallW*px}]}><Text style={styles.wallCotaText}>{mFmt(wallW)}</Text></View><View pointerEvents="none" style={[styles.wallHeightCota,{left:31+wallW*px,top:28,height:wallH*px}]}><Text style={[styles.wallCotaText,{transform:[{rotate:'90deg'}]}]}>{mFmt(wallH)}</Text></View>{objects.map(o=><WallObject key={o.id} obj={o} wallW={wallW} wallH={wallH} boardW={boardW} boardH={boardH} px={px} selected={o.id===selectedId} onSelect={()=>setSelectedId(o.id)} onEdit={()=>{setSelectedId(o.id);setEditOpen(true)}} onChange={updateObj}/>)}</View></View></GestureDetector>{selected?<View style={styles.cotaBar}><Text style={styles.cotaText}>← {mFmt(selected.left)}</Text><Text style={styles.cotaName}>{selected.type}</Text><Text style={styles.cotaText}>{mFmt(Math.max(0,wallW-selected.left-selected.width))} →</Text><Text style={styles.cotaText}>↕ piso {mFmt(selected.bottom)}</Text></View>:<Text style={styles.selectHint}>Selecione um elemento para ver as cotas.</Text>}<View style={styles.elevActions}><Button secondary title="＋ Adicionar" onPress={()=>setAddOpen(true)}/>{selected?<Button title="Editar" onPress={()=>setEditOpen(true)}/>:null}</View><AddSheet visible={addOpen} allowedGroups={FRONT_GROUPS} excludedItems={FREE_PLAN_TYPES} initialGroup="Pontos" onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={wallIndex}/><ObjectModal visible={editOpen} object={selected} wallW={wallW} wallH={wallH} onClose={()=>setEditOpen(false)} onSave={updateObj} onDelete={()=>{if(!selected)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onUpdateRoom({...room,elements:(room.elements||[]).filter(e=>e.id!==selected.id)},false);setSelectedId(null);setEditOpen(false)});}}/></View>;
+  return <View style={styles.editorScreen}><View style={styles.editorTop}><Pressable onPress={onBack}><Text style={styles.back}>‹ Planta</Text></Pressable><View style={{flex:1,marginHorizontal:10}}><Text style={styles.editorTitle}>Parede {String.fromCharCode(65+wallIndex)}</Text><Text style={styles.editorSub}>{mFmt(wallW)} × {mFmt(wallH)} · {room.name}</Text></View><Pressable onPress={()=>onUpdateRoom(room,true)} style={styles.saveBtn}><Text style={styles.saveBtnText}>Salvar</Text></Pressable></View><View style={styles.toolBar}><Text style={styles.toolLabel}>Arraste para pré-posicionar · toque para editar com precisão</Text><Text style={styles.zoomBadge}>{Math.round(zoom*100)}%</Text></View><GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:boardW,height:boardH}]}><View style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><View style={[styles.wallFace,{left:27,top:28,width:wallW*px,height:wallH*px}]}/><View pointerEvents="none" style={[styles.wallWidthCota,{left:27,top:4,width:wallW*px}]}><Text style={styles.wallCotaText}>{mFmt(wallW)}</Text></View><View pointerEvents="none" style={[styles.wallHeightCota,{left:31+wallW*px,top:28,height:wallH*px}]}><Text style={[styles.wallCotaText,{transform:[{rotate:'90deg'}]}]}>{mFmt(wallH)}</Text></View>{objects.map(o=><WallObject key={o.id} obj={o} wallW={wallW} wallH={wallH} boardW={boardW} boardH={boardH} px={px} selected={o.id===selectedId} onSelect={()=>setSelectedId(o.id)} onEdit={()=>{setSelectedId(o.id);setEditOpen(true)}} onChange={updateObj}/>)}</View></View></GestureDetector>{selected?<View style={styles.cotaBar}><Text style={styles.cotaText}>← {mFmt(isInternalWall(selected.type)?selected.left:Math.max(0,selected.left-wallSegmentForElement(room,selected).start))}</Text><Text style={styles.cotaName}>{selected.type}</Text><Text style={styles.cotaText}>{mFmt(isInternalWall(selected.type)?Math.max(0,wallW-selected.left-selected.width):Math.max(0,wallSegmentForElement(room,selected).end-selected.left-selected.width))} →</Text><Text style={styles.cotaText}>↕ piso {mFmt(selected.bottom)}</Text></View>:<Text style={styles.selectHint}>Selecione um elemento para ver as cotas.</Text>}<View style={styles.elevActions}><Button secondary title="＋ Adicionar" onPress={()=>setAddOpen(true)}/>{selected?<Button title="Editar" onPress={()=>setEditOpen(true)}/>:null}</View><AddSheet visible={addOpen} allowedGroups={FRONT_GROUPS} excludedItems={FREE_PLAN_TYPES} initialGroup="Pontos" onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={wallIndex}/><ObjectModal visible={editOpen} object={selected} wallW={wallW} wallH={wallH} onClose={()=>setEditOpen(false)} onSave={updateObj} onDelete={()=>{if(!selected)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onUpdateRoom({...room,elements:(room.elements||[]).filter(e=>e.id!==selected.id)},false);setSelectedId(null);setEditOpen(false)});}}/></View>;
 }
 
 function ElementVisual({type,width,height}){
@@ -1310,7 +1351,7 @@ export default function App(){
   };
   const deleteProject=id=>confirmDelete('Excluir projeto','Excluir este projeto e todos os ambientes?',async()=>{await persist(projects.filter(p=>p.id!==id));if(activeProjectId===id){setActiveProjectId(null);setActiveRoomId(null);setScreen('home')}});
   const deleteRoom=id=>confirmDelete('Excluir ambiente','Excluir este ambiente e todas as medidas dele?',async()=>{const next=projects.map(p=>p.id!==activeProjectId?p:{...p,updatedAt:Date.now(),rooms:p.rooms.filter(r=>r.id!==id)});await persist(next);if(activeRoomId===id)setActiveRoomId(null)});
-  const begin=meta=>{setDraftMeta(meta);setActiveProjectId(meta.projectId||null);setActiveRoomId(null);setScreen('measure')};
+  const begin=async meta=>{const count=clamp(Number(meta?.suggestedWallCount||4),1,4);const r={id:uid(),name:meta.room,roomType:meta.roomType||'',wallCount:count,lengths:[3.20,2.80,3.20,2.80].slice(0,count),height:2.65,elements:[],photos:[],notes:'',createdAt:Date.now()};let pid=meta.projectId,next;if(pid){next=projects.map(p=>p.id===pid?{...p,updatedAt:Date.now(),rooms:[...(p.rooms||[]),r]}:p)}else{pid=uid();next=[...projects,{id:pid,client:meta.client,name:meta.project,rooms:[r],createdAt:Date.now(),updatedAt:Date.now()}]};await persist(next);setDraftMeta(meta);setActiveProjectId(pid);setActiveRoomId(r.id);setScreen('measure')};
   const createRoom=async count=>{const r={id:uid(),name:draftMeta.room,wallCount:count,lengths:[3.20,2.80,3.20,2.80].slice(0,count),height:2.65,elements:[],photos:[],notes:'',createdAt:Date.now()};let pid=draftMeta.projectId,next;if(pid){next=projects.map(p=>p.id===pid?{...p,updatedAt:Date.now(),rooms:[...p.rooms,r]}:p)}else{pid=uid();next=[...projects,{id:pid,client:draftMeta.client,name:draftMeta.project,rooms:[r],createdAt:Date.now(),updatedAt:Date.now()}]};await persist(next);setActiveProjectId(pid);setActiveRoomId(r.id);setScreen('measure')};
   const newRoomForProject=p=>{setActiveRoomId(null);setDraftMeta({client:p.client,project:p.name,room:'',projectId:p.id});setScreen('newRoomName')};
   const sendCurrentToGw=async()=>{
