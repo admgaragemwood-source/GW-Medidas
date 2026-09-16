@@ -1,0 +1,11 @@
+GW MEDIDAS — CORREÇÃO v5 — 16/09/2026
+
+Foco desta versão: sistema de cotas.
+
+- Planta baixa: cotas segmentadas distribuídas entre os dois lados da parede.
+- Cada trecho recebe uma única cota: nunca simultaneamente em cima e embaixo.
+- Vista frontal: cada trecho/objeto escolhe somente um lado (superior OU inferior).
+- Linhas auxiliares partem da referência medida e terminam na linha de cota correspondente.
+- Mantidas as correções visuais dos pontos da v4.
+
+Substituir SOMENTE na pasta GW-Medidas.

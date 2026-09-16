@@ -1,0 +1,4 @@
+
+V6 - 16/09/2026
+- Cota geral 7,00 m ganhou faixa própria na vista frontal.
+- Parede interna agora fica encaixada pela ponta na face interna da parede A/B/C/D.

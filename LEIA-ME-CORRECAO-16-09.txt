@@ -1,0 +1,12 @@
+GW MEDIDAS — CORREÇÃO 16/09/2026
+
+Base: GW-Medidas-ATUAL de 14/09.
+
+Correções deste pacote:
+- Vista frontal realinhada ao piso/parede (objetos não flutuam).
+- Cotas da vista frontal alternadas acima/abaixo e linhas auxiliares partindo do objeto.
+- Cotas da planta distribuídas nos dois lados do ambiente (cima/baixo ou esquerda/direita).
+- Linhas auxiliares das cotas da planta começam exatamente no ponto medido.
+- Parede interna livre limitada ao interior da planta para não atravessar/flutuar fora do ambiente.
+- Fogão/Fogão-Cooktop com desenho frontal mais reconhecível.
+- Mantidos os ajustes anteriores: pontos técnicos, vãos, Bancada, Porta de correr e medidas por vista.

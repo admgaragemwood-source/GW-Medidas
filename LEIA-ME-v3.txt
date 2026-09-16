@@ -1,0 +1,10 @@
+GW MEDIDAS — CORREÇÃO v3 — 16/09/2026
+
+Correção específica dos pontos técnicos:
+- Tomada: somente placa retangular, sem círculo externo.
+- Interruptor: somente placa retangular, sem círculo externo.
+- Água: um único círculo azul preenchido, sem círculo interno.
+- Esgoto: um único círculo escuro/preto preenchido, sem círculo interno.
+- Mantida área/tamanho de interação do componente sem acrescentar moldura visual.
+
+Este pacote mantém as demais correções da v2.

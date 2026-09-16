@@ -1,0 +1,13 @@
+GW MEDIDAS — PACOTE DE AJUSTES 16/09/2026
+
+Base recebida: GW-Medidas-ATUAL(1).zip (usuário informou ser a última cópia, de 14/09/2026).
+
+Alterações deste pacote:
+1. Pontos técnicos: tomada e interruptor retangulares; água circular azul; esgoto circular escuro; tamanho visual reduzido mantendo área de toque confortável.
+2. Equipamentos e vãos: vãos com representação tracejada; diferenciação visual maior de lava-louças, máquina de lavar, forno/micro-ondas, geladeira/freezer/frigobar, coifa/depurador e outros.
+3. Cotas: vista frontal com maior margem e distribuição alternada acima/abaixo; linhas auxiliares ligam os limites dos objetos às cotas.
+4. Seleção por vista: na Planta, item selecionado mostra Profundidade; na vista Paredes, mostra Largura x Altura.
+5. Novo item: Bancada (continuação de pedra/tampo, independente da pia).
+6. Nova abertura: Porta de correr, com largura ajustável e símbolo próprio.
+
+PASTA: GW Medidas (não substituir arquivos do GW Assistente).

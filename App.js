@@ -1,5 +1,4 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.5.5 — refinamento técnico de ambientes, paredes internas e cotas
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -45,7 +44,7 @@ const MUTED = '#66758A';
 const BG = '#F3F6F9';
 const BORDER = '#D8E0E9';
 const WHITE = '#FFFFFF';
-const GRID = '#D5E0EB';
+const GRID = '#C6DDF3';
 const STORE_KEY = 'gw-medidas-v15'; // mantém compatibilidade com medições já salvas
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -104,10 +103,10 @@ const dimensionText = e => {
 };
 
 const GROUPS = [
-  { key: 'Aberturas', icon: '▱', items: ['Porta', 'Janela', 'Passagem', 'Nicho'] },
+  { key: 'Aberturas', icon: '▱', items: ['Porta', 'Porta de correr', 'Janela', 'Passagem', 'Nicho'] },
   { key: 'Pontos', icon: '⌁', items: ['Tomada', 'Interruptor', 'Água', 'Esgoto', 'Gás', 'TV/Dados'] },
   { key: 'Estruturas', icon: '▦', items: ['Pilar', 'Coluna', 'Shaft', 'Viga', 'Parede horizontal', 'Parede vertical'] },
-  { key: 'Equipamentos', icon: '▣', items: ['Pia', 'Cuba', 'Geladeira', 'Frigobar', 'Freezer', 'Adega', 'Fogão', 'Cooktop', 'Forno', 'Micro-ondas', 'Lava-louças', 'Máquina de lavar', 'Secadora', 'Tanque', 'Coifa', 'Depurador', 'Ar-condicionado', 'Televisão', 'Mesa', 'Cadeira', 'Sofá', 'Poltrona', 'Rack', 'Aparador', 'Cama solteiro', 'Cama casal', 'Cama queen', 'Cama king', 'Beliche', 'Criado-mudo', 'Guarda-roupa', 'Outro', ...RESERVED_SPACE_TYPES] },
+  { key: 'Equipamentos', icon: '▣', items: ['Pia', 'Bancada', 'Cuba', 'Geladeira', 'Frigobar', 'Freezer', 'Adega', 'Fogão', 'Cooktop', 'Forno', 'Micro-ondas', 'Lava-louças', 'Máquina de lavar', 'Secadora', 'Tanque', 'Coifa', 'Depurador', 'Ar-condicionado', 'Televisão', 'Mesa', 'Cadeira', 'Sofá', 'Poltrona', 'Rack', 'Aparador', 'Cama solteiro', 'Cama casal', 'Cama queen', 'Cama king', 'Beliche', 'Criado-mudo', 'Guarda-roupa', 'Outro', ...RESERVED_SPACE_TYPES] },
   { key: 'Acabamentos', icon: '⌜', items: ['Rodapé', 'Sanca'] },
 ];
 const PLAN_GROUPS = ['Aberturas','Estruturas'];
@@ -115,7 +114,7 @@ const PLAN_ADD_GROUPS = ['Aberturas','Estruturas','Equipamentos'];
 const FRONT_GROUPS = ['Pontos','Equipamentos','Acabamentos'];
 const INTERNAL_WALL_TYPES = ['Parede horizontal','Parede vertical'];
 const isInternalWall = type => INTERNAL_WALL_TYPES.includes(type);
-const FREE_PLAN_TYPES = ['Mesa','Cadeira','Sofá','Poltrona','Rack','Aparador','Cama solteiro','Cama casal','Cama queen','Cama king','Beliche','Criado-mudo','Guarda-roupa'];
+const FREE_PLAN_TYPES = ['Mesa','Cadeira','Sofá','Poltrona','Rack','Aparador','Cama solteiro','Cama casal','Cama queen','Cama king','Beliche','Criado-mudo','Guarda-roupa',...INTERNAL_WALL_TYPES];
 const isFreePlanType = type => FREE_PLAN_TYPES.includes(type);
 // Parede interna: o vínculo é determinado pela borda do ambiente à qual ela está presa.
 // A=topo, B=direita, C=base, D=esquerda. Isso corrige inclusive paredes criadas
@@ -123,13 +122,15 @@ const isFreePlanType = type => FREE_PLAN_TYPES.includes(type);
 const resolvedInternalWallIndex = (e,room) => {
   if(!isInternalWall(e?.type)) return Number(e?.wall)||0;
   const count=Math.max(1,Number(room?.wallCount||4));
-  const stored=Number(e?.wall);
-  if(Number.isFinite(stored)&&stored>=0&&stored<count) return stored;
-  // Compatibilidade com paredes internas antigas, salvas como elemento livre.
   const fx=clamp(Number.isFinite(e?.freeX)?Number(e.freeX):.5,.05,.95);
   const fy=clamp(Number.isFinite(e?.freeY)?Number(e.freeY):.58,.08,.92);
-  if(e?.type==='Parede vertical') return count>=3?(fy>=.5?2:0):0;
-  return count>=4?(fx>=.5?1:3):(count>=2?1:0);
+  if(e?.type==='Parede vertical'){
+    if(count<3) return 0;
+    return fy>=.5?2:0;
+  }
+  if(count>=4) return fx>=.5?1:3;
+  if(count>=2) return 1;
+  return 0;
 };
 const elementWallIndex = (e,room) => isInternalWall(e?.type)?resolvedInternalWallIndex(e,room):(Number(e?.wall)||0);
 const internalWallThickness = e => {
@@ -137,48 +138,22 @@ const internalWallThickness = e => {
   return clamp(raw,.06,.18);
 };
 const internalWallFrontLeft = (e,wallIndex,room) => {
-  // A parede interna já é ancorada e movimentada pelo campo `left` na Planta.
-  // A vista frontal precisa usar EXATAMENTE a mesma coordenada; usar freeX/freeY
-  // fazia a projeção aparecer em outro ponto (normalmente no meio da parede).
   const wallW=(room?.lengths||[])[wallIndex]||3.2, t=internalWallThickness(e);
-  return clamp(Number(e?.left||0),0,Math.max(0,wallW-t));
+  let n=.5;
+  if(wallIndex===0)n=Number.isFinite(e?.freeX)?e.freeX:.5;
+  else if(wallIndex===1)n=Number.isFinite(e?.freeY)?e.freeY:.5;
+  else if(wallIndex===2)n=1-(Number.isFinite(e?.freeX)?e.freeX:.5);
+  else if(wallIndex===3)n=1-(Number.isFinite(e?.freeY)?e.freeY:.5);
+  return clamp(n*wallW-t/2,0,Math.max(0,wallW-t));
 };
 const frontObjectForRoom = (e,wallIndex,room) => isInternalWall(e?.type)
   ? {...e,wall:wallIndex,width:internalWallThickness(e),height:room?.height||2.65,bottom:0,left:internalWallFrontLeft(e,wallIndex,room),_internalProjection:true}
   : e;
-
-const alongWallWidth = e => isInternalWall(e?.type)?internalWallThickness(e):Number(e?.width||0);
-const wallAvailableSegments = (room,wallIndex) => {
-  const wallW=Number(room?.lengths?.[wallIndex]||0);
-  if(!(wallW>0)) return [{start:0,end:0,width:0}];
-  const blockers=(room?.elements||[])
-    .filter(e=>isInternalWall(e?.type)&&elementWallIndex(e,room)===wallIndex)
-    .map(e=>{const t=internalWallThickness(e),start=clamp(Number(e.left||0),0,Math.max(0,wallW-t));return {start,end:start+t};})
-    .sort((a,b)=>a.start-b.start);
-  const out=[];let cursor=0;
-  blockers.forEach(b=>{if(b.start-cursor>.03)out.push({start:cursor,end:b.start,width:b.start-cursor});cursor=Math.max(cursor,b.end)});
-  if(wallW-cursor>.03)out.push({start:cursor,end:wallW,width:wallW-cursor});
-  return out.length?out:[{start:0,end:wallW,width:wallW}];
-};
-const wallSegmentForElement = (room,e) => {
-  const wi=elementWallIndex(e,room), wallW=Number(room?.lengths?.[wi]||0);
-  if(!e||isInternalWall(e?.type)||isFreePlanType(e?.type)||e?.free===true||!(wallW>0)) return {start:0,end:wallW,width:wallW,wallIndex:wi};
-  const segments=wallAvailableSegments(room,wi), width=Math.max(.02,Number(e.width||0)), center=Number(e.left||0)+width/2;
-  let seg=segments.find(x=>center>=x.start-.001&&center<=x.end+.001);
-  if(!seg||seg.width<width) seg=segments.filter(x=>x.width>=width).sort((a,b)=>b.width-a.width)[0]||segments.sort((a,b)=>b.width-a.width)[0];
-  return {...seg,wallIndex:wi};
-};
-const constrainElementToWallSegments = (room,e) => {
-  if(!e||isInternalWall(e.type)||isFreePlanType(e.type)||e.free===true) return e;
-  const seg=wallSegmentForElement(room,e), width=Math.max(.02,Number(e.width||0));
-  if(!(seg.width>0)) return e;
-  const maxLeft=Math.max(seg.start,seg.end-width);
-  return {...e,wall:seg.wallIndex,left:clamp(Number(e.left||0),seg.start,maxLeft)};
-};
-const visualLayer = e => isInternalWall(e?.type)?8:(Number.isFinite(Number(e?.layer)) ? Number(e.layer) : ((GROUPS.find(g=>g.key==='Acabamentos')?.items||[]).includes(e?.type)?0:(isEquipment(e?.type)?2:1)));
+const visualLayer = e => Number.isFinite(Number(e?.layer)) ? Number(e.layer) : ((GROUPS.find(g=>g.key==='Acabamentos')?.items||[]).includes(e?.type)?0:(isEquipment(e?.type)?2:1));
 
 const DEFAULTS = {
   Porta: { width: .80, height: 2.10, bottom: 0, swing: 'left' },
+  'Porta de correr': { width: 1.80, height: 2.10, bottom: 0, depth: .08 },
   Janela: { width: 1.20, height: 1.00, bottom: 1.10 },
   Passagem: { width: .90, height: 2.10, bottom: 0 },
   Nicho: { width: .60, height: .40, bottom: 1.20 },
@@ -195,6 +170,7 @@ const DEFAULTS = {
   'Parede horizontal': { width: 1.50, height: 2.65, bottom: 0, depth: .10 },
   'Parede vertical': { width: .10, height: 2.65, bottom: 0, depth: 1.50 },
   Pia: { width: 1.20, height: .20, bottom: .90, depth: .60, thickness: .03 },
+  Bancada: { width: 1.80, height: .05, bottom: .90, depth: .60, thickness: .03 },
   Geladeira: { width: .70, height: 1.85, bottom: 0, depth: .70 },
   Fogão: { width: .60, height: .90, bottom: 0, depth: .60 },
   Cooktop: { width: .60, height: .08, bottom: .90, depth: .52 },
@@ -239,10 +215,10 @@ const DEFAULTS = {
 };
 
 const ICONS = {
-  Porta: '🚪', Janela: '▤', Passagem: '▯', Nicho: '□',
+  Porta: '🚪', 'Porta de correr':'⇆', Janela: '▤', Passagem: '▯', Nicho: '□',
   Tomada: '🔌', Interruptor: '◉', Água: '💧', Esgoto: '◍', Gás: '🔥', 'TV/Dados': '▣',
   Pilar: '▰', Coluna: '▮', Shaft: '▧', Viga: '▬', 'Parede horizontal':'━', 'Parede vertical':'┃',
-  Pia: '⌑', Geladeira: '▥', Fogão: '▤', Cooktop: '▱', 'Fogão/Cooktop': '◉', Forno: '▣', 'Micro-ondas': '▭', 'Lava-louças': '▦', 'Máquina de lavar': '◉', Tanque: '∪', Coifa: '⌂', 'Cama solteiro':'▱', 'Cama casal':'▰', Beliche:'▥', 'Televisão':'▭', Mesa:'▤', 'Sofá':'▰', 'Poltrona':'▣', 'Cadeira':'♢', 'Rack':'▬', 'Aparador':'▭', 'Cama queen':'▰', 'Cama king':'▰', 'Criado-mudo':'□', 'Guarda-roupa':'▥', Cuba:'⌒', Frigobar:'▥', Freezer:'▰', Adega:'▦', Secadora:'◉', Depurador:'▬', 'Ar-condicionado':'▭', 'Vão geladeira':'⬚', 'Vão forno':'⬚', 'Vão micro-ondas':'⬚', 'Vão lava-louças':'⬚', 'Vão máquina':'⬚', 'Vão cooktop':'⬚', 'Vão TV':'⬚', 'Vão personalizado':'⬚', Outro:'□', Rodapé:'▬', Sanca:'⌜',
+  Pia: '⌑', Bancada:'▬', Geladeira: '▥', Fogão: '▤', Cooktop: '▱', 'Fogão/Cooktop': '◉', Forno: '▣', 'Micro-ondas': '▭', 'Lava-louças': '▦', 'Máquina de lavar': '◉', Tanque: '∪', Coifa: '⌂', 'Cama solteiro':'▱', 'Cama casal':'▰', Beliche:'▥', 'Televisão':'▭', Mesa:'▤', 'Sofá':'▰', 'Poltrona':'▣', 'Cadeira':'♢', 'Rack':'▬', 'Aparador':'▭', 'Cama queen':'▰', 'Cama king':'▰', 'Criado-mudo':'□', 'Guarda-roupa':'▥', Cuba:'⌒', Frigobar:'▥', Freezer:'▰', Adega:'▦', Secadora:'◉', Depurador:'▬', 'Ar-condicionado':'▭', 'Vão geladeira':'⬚', 'Vão forno':'⬚', 'Vão micro-ondas':'⬚', 'Vão lava-louças':'⬚', 'Vão máquina':'⬚', 'Vão cooktop':'⬚', 'Vão TV':'⬚', 'Vão personalizado':'⬚', Outro:'□', Rodapé:'▬', Sanca:'⌜',
 };
 
 function AppFrame({ children }) {
@@ -282,14 +258,14 @@ function Home({ projects, onNew, onOpen, onDelete, onClients, onHelp, onMore }) 
 }
 
 function NewMeasurement({ projects, onBack, onContinue }) {
-  const [client,setClient]=useState(''); const [project,setProject]=useState(''); const [room,setRoom]=useState('Cozinha'); const [kind,setKind]=useState('Cozinha'); const [existing,setExisting]=useState(null); const [roomAuto,setRoomAuto]=useState(true);
+  const [client,setClient]=useState(''); const [project,setProject]=useState(''); const [room,setRoom]=useState(''); const [kind,setKind]=useState('Cozinha'); const [existing,setExisting]=useState(null);
   const chooseExisting=p=>{setExisting(p.id);setClient(p.client);setProject(p.name)}; const ready=client.trim()&&project.trim()&&room.trim();
   const kinds=[['▦','Cozinha'],['▱','Dormitório'],['♨','Banheiro'],['▤','Sala'],['▧','Área de serviço'],['•••','Outro']];
   return <ScrollView style={styles.screen} keyboardShouldPersistTaps="handled"><View style={styles.simpleTop}><Pressable onPress={onBack}><Text style={styles.simpleBack}>‹</Text></Pressable><Text style={styles.simpleTopTitle}>Novo ambiente</Text><View style={{width:30}}/></View><View style={styles.newEnvPad}>
     {projects.length?<><Text style={styles.newEnvLabel}>Medição existente (opcional)</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>{projects.map(p=><Pressable key={p.id} onPress={()=>chooseExisting(p)} style={[styles.existingChip,existing===p.id&&styles.existingChipOn]}><Text style={[styles.existingChipText,existing===p.id&&{color:BLUE}]}>{p.client} · {p.name}</Text></Pressable>)}</ScrollView></>:null}
-    <Field label="Cliente" value={client} onChangeText={v=>{setClient(v);setExisting(null)}} placeholder="Ex.: João Silva"/><Field label="Projeto" value={project} onChangeText={v=>{setProject(v);setExisting(null)}} placeholder="Ex.: Cozinha - Cliente João"/><Field label="Nome do ambiente" value={room} onChangeText={v=>{setRoom(v);setRoomAuto(false)}} placeholder="Cozinha"/>
-    <Text style={styles.newEnvLabel}>Tipo de ambiente (opcional)</Text><View style={styles.roomTypeGrid}>{kinds.map(([ic,n])=><Pressable key={n} onPress={()=>{setKind(n);if(roomAuto||!room.trim()){setRoom(n==='Outro'?'':n);setRoomAuto(n!=='Outro')}}} style={[styles.roomTypeCard,kind===n&&styles.roomTypeCardOn]}><Text style={[styles.roomTypeIcon,kind===n&&{color:BLUE}]}>{ic}</Text><Text style={[styles.roomTypeText,kind===n&&{color:BLUE}]}>{n}</Text></Pressable>)}</View>
-    <Pressable disabled={!ready} onPress={()=>onContinue({client:client.trim(),project:project.trim(),room:room.trim(),roomType:kind,projectId:existing,suggestedWallCount:4})} style={[styles.createEnvBtn,!ready&&{opacity:.4}]}><Text style={styles.createEnvText}>Criar ambiente</Text></Pressable>
+    <Field label="Cliente" value={client} onChangeText={v=>{setClient(v);setExisting(null)}} placeholder="Ex.: João Silva"/><Field label="Projeto" value={project} onChangeText={v=>{setProject(v);setExisting(null)}} placeholder="Ex.: Cozinha - Cliente João"/><Field label="Nome do ambiente" value={room} onChangeText={setRoom} placeholder="Cozinha"/>
+    <Text style={styles.newEnvLabel}>Tipo de ambiente (opcional)</Text><View style={styles.roomTypeGrid}>{kinds.map(([ic,n])=><Pressable key={n} onPress={()=>setKind(n)} style={[styles.roomTypeCard,kind===n&&styles.roomTypeCardOn]}><Text style={[styles.roomTypeIcon,kind===n&&{color:BLUE}]}>{ic}</Text><Text style={[styles.roomTypeText,kind===n&&{color:BLUE}]}>{n}</Text></Pressable>)}</View>
+    <Pressable disabled={!ready} onPress={()=>onContinue({client:client.trim(),project:project.trim(),room:room.trim(),roomType:kind,projectId:existing})} style={[styles.createEnvBtn,!ready&&{opacity:.4}]}><Text style={styles.createEnvText}>Criar ambiente</Text></Pressable>
   </View></ScrollView>;
 }
 
@@ -355,7 +331,7 @@ function PlanSelectedWallSegments({wall,wallLength,elements=[],walls=[],width,he
   if((mx+nx*20-cx)**2+(my+ny*20-cy)**2 < (mx-nx*20-cx)**2+(my-ny*20-cy)**2){nx=-nx;ny=-ny}
   const relevant=elements.filter(e=>Number(e.wall)===Number(wall.index));
   if(!relevant.length)return null;
-  const cuts=[0,wallLength]; relevant.forEach(e=>{const aw=alongWallWidth(e);cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+aw,0,wallLength))});
+  const cuts=[0,wallLength]; relevant.forEach(e=>{cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+(e.width||0),0,wallLength))});
   const vals=[...new Set(cuts.map(v=>Math.round(v*1000)/1000))].sort((a,b)=>a-b);
   const off=42, extensionStart=7, ext='#A6B3BE', dim='#7F91A1';
   return <Svg style={StyleSheet.absoluteFillObject} width={width} height={height} pointerEvents="none">
@@ -420,9 +396,10 @@ function PlanTechnicalLayer({walls,room,selected,selectedElement,canvasFree,onCh
       const wallLength=Number(w.length||room.lengths?.[i]||0);
       const relevant=(room.elements||[]).filter(e=>Number(e.wall)===Number(w.index));
       const cuts=[0,wallLength];
-      relevant.forEach(e=>{const aw=alongWallWidth(e);cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+aw,0,wallLength))});
+      relevant.forEach(e=>{cuts.push(clamp(e.left||0,0,wallLength));cuts.push(clamp((e.left||0)+(e.width||0),0,wallLength))});
       const vals=[...new Set(cuts.map(v=>Math.round(v*1000)/1000))].sort((aa,bb)=>aa-bb);
-      const segOff=42, extensionStart=7;
+      const segOff=42;
+      const minX=Math.min(...pts.map(p=>p.x)),maxX=Math.max(...pts.map(p=>p.x)),minY=Math.min(...pts.map(p=>p.y)),maxY=Math.max(...pts.map(p=>p.y));
       return <React.Fragment key={`tech-${i}`}>
         <Line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={active?BLUE:INK} strokeWidth={active?12:10} strokeLinecap="square"/>
         <Line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={WHITE} strokeWidth={active?6:5.2} strokeLinecap="square"/>
@@ -440,12 +417,17 @@ function PlanTechnicalLayer({walls,room,selected,selectedElement,canvasFree,onCh
           const v2=vals[j+1],seg=v2-v;if(seg<.08)return null;
           const p1={x:w.a.x+ux*(v/wallLength)*L,y:w.a.y+uy*(v/wallLength)*L};
           const p2={x:w.a.x+ux*(v2/wallLength)*L,y:w.a.y+uy*(v2/wallLength)*L};
-          const span=Math.hypot(p2.x-p1.x,p2.y-p1.y),compact=span<44,tier=compact?(j%2):0,localOff=segOff+tier*13;
-          const sa={x:p1.x+nx*localOff,y:p1.y+ny*localOff},sb={x:p2.x+nx*localOff,y:p2.y+ny*localOff};
+          const span=Math.hypot(p2.x-p1.x,p2.y-p1.y),compact=span<44;
+          // Cada trecho recebe UMA única cota. Alternamos o lado da parede para distribuir
+          // a informação: uma fica para fora e a seguinte para dentro, sem duplicar o mesmo objeto.
+          const side=(j%2===0)?1:-1;
+          const rowPad=segOff+(compact?6:0);
+          const sa={x:p1.x+nx*rowPad*side,y:p1.y+ny*rowPad*side};
+          const sb={x:p2.x+nx*rowPad*side,y:p2.y+ny*rowPad*side};
           const stx=(sa.x+sb.x)/2,sty=(sa.y+sb.y)/2,key=`plan-${i}-${j}`,focus=focusedCota===key,labelW=focus?54:(compact?34:32),labelH=focus?20:12,labelFont=focus?11.5:7.2;
           return <React.Fragment key={`seg-${i}-${j}`}>
-            <Line x1={p1.x+nx*extensionStart} y1={p1.y+ny*extensionStart} x2={sa.x} y2={sa.y} stroke="#A6B3BE" strokeWidth=".65"/>
-            <Line x1={p2.x+nx*extensionStart} y1={p2.y+ny*extensionStart} x2={sb.x} y2={sb.y} stroke="#A6B3BE" strokeWidth=".65"/>
+            <Line x1={p1.x} y1={p1.y} x2={sa.x} y2={sa.y} stroke="#A6B3BE" strokeWidth=".65"/>
+            <Line x1={p2.x} y1={p2.y} x2={sb.x} y2={sb.y} stroke="#A6B3BE" strokeWidth=".65"/>
             <Line x1={sa.x} y1={sa.y} x2={sb.x} y2={sb.y} stroke="#7F91A1" strokeWidth=".8"/>
             <Line x1={sa.x-ny*3} y1={sa.y+nx*3} x2={sa.x+ny*3} y2={sa.y-nx*3} stroke="#7F91A1" strokeWidth=".8"/>
             <Line x1={sb.x-ny*3} y1={sb.y+nx*3} x2={sb.x+ny*3} y2={sb.y-nx*3} stroke="#7F91A1" strokeWidth=".8"/>
@@ -463,8 +445,6 @@ function WallMeasureModal({ visible, title, initialWidth, initialHeight, onCance
   const [voiceListening,setVoiceListening]=useState(false),[voiceText,setVoiceText]=useState(''),[voiceMessage,setVoiceMessage]=useState('');
   const voiceSessionRef=useRef(false);
   const voiceOptions={lang:'pt-BR',interimResults:true,continuous:true,maxAlternatives:1,addsPunctuation:false};
-  const isVoiceSaveCommand=t=>/(?:^|\s)(?:salvar|salva|confirmar|confirma|aplicar|aplica)(?:\s+(?:medidas?|medição))?[.! ]*$/i.test(String(t||'').trim());
-  const stripVoiceSaveCommand=t=>String(t||'').replace(/(?:^|\s)(?:salvar|salva|confirmar|confirma|aplicar|aplica)(?:\s+(?:medidas?|medição))?[.! ]*$/i,'').trim();
   useEffect(()=>{setWidthValue(numFmt(initialWidth));setHeightValue(numFmt(initialHeight));if(visible){setVoiceText('');setVoiceMessage('');}},[visible,initialWidth,initialHeight]);
   useEffect(()=>()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}},[]);
   const applyWallVoice=t=>{
@@ -480,13 +460,13 @@ function WallMeasureModal({ visible, title, initialWidth, initialHeight, onCance
     }
     setVoiceMessage(changed.length?`Preenchido: ${changed.join(', ')}.`:'Não encontrei as medidas. Tente: “largura 5 metros e 50, altura 2 metros e 65”.');
   };
-  useSpeechRecognitionEvent('start',()=>{if(visible){setVoiceListening(true);setVoiceMessage('Ouvindo… fale as medidas e diga “salvar” ou “confirmar” quando terminar.');}});
-  useSpeechRecognitionEvent('result',event=>{if(!visible)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;const command=event.isFinal&&isVoiceSaveCommand(t), spoken=stripVoiceSaveCommand(t);setVoiceText(prev=>event.isFinal?[prev,t].filter(Boolean).join(' · '):t);if(event.isFinal&&spoken)applyWallVoice(spoken);if(command){const values=extractVoiceMeasures(spoken);const nextW=values.width!=null?values.width:parseMeters(widthValue,initialWidth),nextH=values.height!=null?values.height:parseMeters(heightValue,initialHeight);voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}setVoiceListening(false);setVoiceMessage('Medidas confirmadas por voz. Salvando…');setTimeout(()=>onSave(clamp(nextW,.05,20),clamp(nextH,.05,10)),80);}});
+  useSpeechRecognitionEvent('start',()=>{if(visible){setVoiceListening(true);setVoiceMessage('Ouvindo… fale largura e altura e toque em Parar quando terminar.');}});
+  useSpeechRecognitionEvent('result',event=>{if(!visible)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;setVoiceText(prev=>event.isFinal?[prev,t].filter(Boolean).join(' · '):t);if(event.isFinal)applyWallVoice(t);});
   useSpeechRecognitionEvent('end',()=>{if(!visible)return;setVoiceListening(false);if(voiceSessionRef.current){setTimeout(()=>{if(voiceSessionRef.current&&visible){try{ExpoSpeechRecognitionModule.start(voiceOptions);}catch(_e){} }},180);}});
   useSpeechRecognitionEvent('error',event=>{if(!visible)return;if(event.error==='aborted')return;if(event.error==='no-speech'&&voiceSessionRef.current)return;voiceSessionRef.current=false;setVoiceListening(false);setVoiceMessage('Não consegui ouvir. Toque em Falar e tente novamente.');});
   const toggleVoice=async()=>{try{if(voiceSessionRef.current||voiceListening){voiceSessionRef.current=false;ExpoSpeechRecognitionModule.stop();setVoiceListening(false);setVoiceMessage('Ditado concluído. Confira largura e altura antes de aplicar.');return;}const permission=await ExpoSpeechRecognitionModule.requestPermissionsAsync();if(!permission.granted){Alert.alert('Microfone','Autorize o microfone para ditar as medidas.');return;}setVoiceText('');setVoiceMessage('');voiceSessionRef.current=true;ExpoSpeechRecognitionModule.start(voiceOptions);}catch(e){voiceSessionRef.current=false;console.warn('voice wall',e);Alert.alert('Voz','Não foi possível iniciar o reconhecimento de voz.');}};
   const apply=()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onSave(clamp(parseMeters(widthValue,initialWidth),.05,20),clamp(parseMeters(heightValue,initialHeight),.05,10));};
-  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined}><Pressable style={{flex:1}} onPress={onCancel}/><View style={[styles.sheet,styles.techEditSheet]}><View style={styles.sheetHandle}/><View style={styles.techEditHead}><View style={styles.wallEditIcon}><Text style={styles.wallEditIconText}>↔</Text></View><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{title}</Text><Text style={styles.formHint}>Largura e altura reais da parede</Text></View></View><View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite ou fale a largura e a altura da parede. Você pode conferir antes de aplicar.</Text></View><View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… ao terminar diga “salvar” ou “confirmar”.':'Ex.: “largura 5 metros e 50, altura 2 metros e 65, salvar”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View><Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={widthValue} onChange={setWidthValue}/><MiniField label="Altura" value={heightValue} onChange={setHeightValue}/></View><View style={{flexDirection:'row',gap:10,marginTop:16}}><Button secondary title="Cancelar" onPress={()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onCancel();}}/><Button title="Aplicar" onPress={apply}/></View></View></KeyboardAvoidingView></Modal>;
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined}><Pressable style={{flex:1}} onPress={onCancel}/><View style={[styles.sheet,styles.techEditSheet]}><View style={styles.sheetHandle}/><View style={styles.techEditHead}><View style={styles.wallEditIcon}><Text style={styles.wallEditIconText}>↔</Text></View><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{title}</Text><Text style={styles.formHint}>Largura e altura reais da parede</Text></View></View><View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite ou fale a largura e a altura da parede. Você pode conferir antes de aplicar.</Text></View><View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… toque em Parar ao terminar.':'Ex.: “largura 5 metros e 50, altura 2 metros e 65”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View><Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={widthValue} onChange={setWidthValue}/><MiniField label="Altura" value={heightValue} onChange={setHeightValue}/></View><View style={{flexDirection:'row',gap:10,marginTop:16}}><Button secondary title="Cancelar" onPress={()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}onCancel();}}/><Button title="Aplicar" onPress={apply}/></View></View></KeyboardAvoidingView></Modal>;
 }
 
 function ItemIcon({ type, size=30 }) { return <View style={[styles.itemIcon,{width:size,height:size,borderRadius:size*.28}]}><Text style={{fontSize:size*.48}}>{ICONS[type]||'•'}</Text></View>; }
@@ -519,6 +499,7 @@ function PlanSymbol({type, selected=false, width=58, swing='left', inward=1}){
       </Svg>
     </View>;
   }
+  if(type==='Porta de correr') return <View style={{width:W,height:42,alignItems:'center'}}><Svg width={W} height={42} viewBox={`0 0 ${W} 42`}><Line x1="1" y1="20" x2={W-1} y2="20" stroke={TECH.wall} strokeWidth="7"/><Rect x="7" y="12" width={Math.max(14,(W-14)*.56)} height="16" fill="#EAF3FF" stroke={c} strokeWidth="1.3"/><Rect x={Math.max(9,W*.40)} y="9" width={Math.max(14,(W-14)*.52)} height="16" fill="#F7FAFC" stroke={c} strokeWidth="1.3"/><Line x1={W*.34} y1="34" x2={W*.66} y2="34" stroke={soft} strokeWidth="1"/><Path d={`M ${W*.34} 34 l 5 -3 M ${W*.34} 34 l 5 3 M ${W*.66} 34 l -5 -3 M ${W*.66} 34 l -5 3`} stroke={soft} strokeWidth="1"/><SvgText x={W/2} y="41" textAnchor="middle" fontSize="6.4" fontWeight="700" fill={TECH.dim}>PORTA DE CORRER</SvgText></Svg></View>;
   if(type==='Janela') return <View style={{width:W,height:34,alignItems:'center'}}>
     <Svg width={W} height={34} viewBox={`0 0 ${W} 34`}>
       <Line x1="1" y1="13" x2={W-1} y2="13" stroke={TECH.wall} strokeWidth="7"/>
@@ -604,60 +585,78 @@ function planInteriorVector(count,index){
   return (maps[count]||maps[4])[index]||[0,1];
 }
 
-function PlanEquipmentElement({element, wall, wallLength, wallCount, zoom, selected, onSelect, onChange, pinchingRef, canvasW, canvasH, planPpm}){
-  const internal=isInternalWall(element.type);
-  const free=!internal&&(isFreePlanType(element.type)||element.free===true);
+function PlanEquipmentElement({element, wall, wallLength, wallCount, zoom, selected, onSelect, onChange, pinchingRef, canvasW, canvasH, planPpm, roomBounds=null}){
+  const free=isFreePlanType(element.type)||element.free===true;
   const dx=wall?.b?.x-wall?.a?.x||1,dy=wall?.b?.y-wall?.a?.y||0,pixLen=Math.max(1,Math.hypot(dx,dy));
   const ux=dx/pixLen,uy=dy/pixLen,nx=-uy,ny=ux;
   const ppm=free?Math.max(20,planPpm||70):pixLen/Math.max(.1,wallLength);
   const inward=planInteriorVector(wallCount,element.wall),sign=(nx*inward[0]+ny*inward[1])>=0?1:-1;
-  const internalThick=internal?internalWallThickness(element):0;
-  const internalThickPx=internal?10:0;
-  const internalLenM=internal?(element.type==='Parede vertical'?Number(element.depth||1.50):Number(element.width||1.50)):0;
-  const internalLenPx=internal?clamp(internalLenM*ppm,24,220):0;
-  const depthPx=internal?internalThickPx:clamp((element.depth||.55)*ppm,18,72);
-  const visualW=internal?internalLenPx:clamp(element.width*ppm,28,140);
-  const anchorSize=internal?internalThick:Number(element.width||0);
-  const t=clamp((Number(element.left||0)+anchorSize/2)/Math.max(.1,wallLength),0,1);
-  const anchorX=(wall?.a?.x||0)+dx*t,anchorY=(wall?.a?.y||0)+dy*t;
-  const anchoredX=internal?anchorX+nx*sign*internalLenPx/2:anchorX+nx*sign*depthPx/2;
-  const anchoredY=internal?anchorY+ny*sign*internalLenPx/2:anchorY+ny*sign*depthPx/2;
+  const internal=isInternalWall(element.type), verticalInternal=element.type==='Parede vertical';
+  const internalThickPx=internal?10:0; // mesma espessura gráfica das paredes fixas da planta
+  const internalLenPx=internal?clamp((verticalInternal?Number(element.depth||1.50):Number(element.width||1.50))*ppm,24,220):0;
+  const depthPx=internal?(verticalInternal?internalLenPx:internalThickPx):clamp((element.depth||.55)*ppm,18,72);
+  const visualW=internal?(verticalInternal?internalThickPx:internalLenPx):clamp(element.width*ppm,28,140);
+  const t=clamp((element.left+element.width/2)/Math.max(.1,wallLength),0,1);
+  const anchoredX=(wall?.a?.x||0)+dx*t+nx*sign*depthPx/2,anchoredY=(wall?.a?.y||0)+dy*t+ny*sign*depthPx/2;
   const freeX=clamp(Number.isFinite(element.freeX)?element.freeX:.50,.05,.95),freeY=clamp(Number.isFinite(element.freeY)?element.freeY:.58,.08,.92);
-  const x=free?freeX*(canvasW||1):anchoredX,y=free?freeY*(canvasH||1):anchoredY;
-  const baseAngle=Math.atan2(dy,dx)*180/Math.PI;
-  const angle=free?0:(internal?baseAngle+90:baseAngle),start=useRef(element.left),freeStart=useRef({x:freeX,y:freeY});
+  let x=free?freeX*(canvasW||1):anchoredX,y=free?freeY*(canvasH||1):anchoredY;
+  if(free&&internal&&roomBounds){
+    // Parede interna fica sempre PRESA pela ponta à face interna da parede externa.
+    // A posição livre controla apenas o deslocamento ao longo da parede; a outra
+    // coordenada é encaixada na borda correta para não atravessar/flutuar fora da planta.
+    const face=5; // meia espessura gráfica aproximada da parede externa
+    if(verticalInternal){
+      x=clamp(x,roomBounds.minX+visualW/2+face,roomBounds.maxX-visualW/2-face);
+      if(Number(element.wall)===2) y=roomBounds.maxY-face-depthPx/2; // Parede C: cresce para cima
+      else y=roomBounds.minY+face+depthPx/2;                         // Parede A: cresce para baixo
+    }else{
+      y=clamp(y,roomBounds.minY+depthPx/2+face,roomBounds.maxY-depthPx/2-face);
+      if(Number(element.wall)===1) x=roomBounds.maxX-face-visualW/2; // Parede B: cresce para esquerda
+      else x=roomBounds.minX+face+visualW/2;                         // Parede D: cresce para direita
+    }
+  }
+  const angle=free?0:Math.atan2(dy,dx)*180/Math.PI,start=useRef(element.left),freeStart=useRef({x:freeX,y:freeY});
   const pan=Gesture.Pan().minDistance(7).activateAfterLongPress(70).maxPointers(1).runOnJS(true).onBegin(()=>{
-    start.current=Number(element.left||0);freeStart.current={x:freeX,y:freeY};
+    start.current=element.left;freeStart.current={x:freeX,y:freeY};
   }).onUpdate(e=>{
     if(pinchingRef?.current)return;
     if(free){
       const nxp=clamp(freeStart.current.x+(e.translationX/Math.max(.8,zoom))/Math.max(1,canvasW),.05,.95);
       const nyp=clamp(freeStart.current.y+(e.translationY/Math.max(.8,zoom))/Math.max(1,canvasH),.08,.92);
-      onChange({...element,free:true,freeX:nxp,freeY:nyp});
+      let nextWall=element.wall;
+      if(internal){
+        if(verticalInternal) nextWall=(wallCount>=3?(nyp>=.5?2:0):0);
+        else nextWall=(wallCount>=4?(nxp>=.5?1:3):(wallCount>=2?1:0));
+      }
+      onChange({...element,free:true,freeX:nxp,freeY:nyp,wall:nextWall});
       return;
     }
     const deltaPx=(e.translationX*ux+e.translationY*uy)/Math.max(.8,zoom);
-    const occupied=internal?internalThick:Number(element.width||0);
-    const left=clamp(start.current+deltaPx/ppm,0,Math.max(0,wallLength-occupied));
-    onChange({...element,free:internal?false:element.free,left,wall:element.wall});
+    const left=clamp(start.current+deltaPx/ppm,0,Math.max(0,wallLength-element.width));onChange({...element,left});
   });
   const tap=Gesture.Tap().maxDistance(8).runOnJS(true).onEnd((_e,ok)=>{if(ok)onSelect()});
   const objectGesture=selected?Gesture.Exclusive(pan,tap):tap;
   const stroke=selected?BLUE:'#5C6872',fill=selected?'rgba(22,119,242,.12)':'rgba(88,104,116,.07)';
   const icon=()=>{
-    if(internal)return <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x="0" y={Math.max(1,(depthPx-5.2)/2)} width={visualW} height={Math.max(1,Math.min(5.2,depthPx-2))} fill={WHITE}/></>;
+    if(internal)return verticalInternal
+      ? <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x={Math.max(1,(visualW-5.2)/2)} y="0" width={Math.max(1,Math.min(5.2,visualW-2))} height={depthPx} fill={WHITE}/></>
+      : <><Rect x="0" y="0" width={visualW} height={depthPx} fill={selected?BLUE:INK}/><Rect x="0" y={Math.max(1,(depthPx-5.2)/2)} width={visualW} height={Math.max(1,Math.min(5.2,depthPx-2))} fill={WHITE}/></>;
     if(isReservedSpace(element.type))return <><Rect x="3" y="3" width={Math.max(2,visualW-6)} height={Math.max(2,depthPx-6)} rx="2" fill="rgba(255,255,255,.18)" stroke={stroke} strokeWidth={selected?1.8:1.2} strokeDasharray="5 3"/><Line x1="7" y1={depthPx/2} x2={Math.max(7,visualW-7)} y2={depthPx/2} stroke="#8A98A3" strokeWidth=".6" strokeDasharray="3 3"/></>;
+    if(element.type==='Bancada')return <><Rect x="2" y="2" width={visualW-4} height={depthPx-4} rx="2" fill="rgba(220,224,225,.72)" stroke={stroke} strokeWidth="1"/><Line x1="5" y1={depthPx*.22} x2={visualW-5} y2={depthPx*.22} stroke="#FFFFFF" strokeWidth="1"/></>;
     if(element.type==='Pia'||element.type==='Tanque')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(238,244,247,.82)" stroke={stroke} strokeWidth="1"/><Rect x={visualW*.30} y={depthPx*.24} width={visualW*.40} height={depthPx*.52} rx="3" fill="rgba(188,207,216,.55)" stroke="#6E8089" strokeWidth=".8"/><Path d={`M ${visualW*.50} ${depthPx*.24} q 0 ${-depthPx*.18} ${visualW*.12} ${-depthPx*.18}`} fill="none" stroke="#596A73" strokeWidth="1.1"/></>;
-    if(element.type==='Fogão'||element.type==='Cooktop')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(58,66,72,.12)" stroke={stroke} strokeWidth="1"/>{[[.28,.33],[.72,.33],[.28,.68],[.72,.68]].map((p,i)=><Circle key={i} cx={visualW*p[0]} cy={depthPx*p[1]} r={Math.max(2,Math.min(5,depthPx*.12))} fill="none" stroke="#46525A" strokeWidth="1"/>)}</>;
-    if(element.type==='Geladeira')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(230,235,238,.62)" stroke={stroke} strokeWidth="1"/><Line x1={visualW*.48} y1="3" x2={visualW*.48} y2={depthPx-3} stroke="#82909A" strokeWidth=".8"/><Line x1={visualW*.52} y1={depthPx*.20} x2={visualW*.52} y2={depthPx*.80} stroke="#82909A" strokeWidth="1"/></>;
-    if(element.type==='Máquina de lavar'||element.type==='Lava-louças')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(231,236,239,.58)" stroke={stroke} strokeWidth="1"/><Circle cx={visualW/2} cy={depthPx/2} r={Math.max(4,depthPx*.26)} fill="rgba(167,196,208,.30)" stroke="#6F7E87" strokeWidth=".8"/></>;
+    if(element.type==='Fogão'||element.type==='Fogão/Cooktop'||element.type==='Cooktop')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(58,66,72,.12)" stroke={stroke} strokeWidth="1"/>{[[.28,.33],[.72,.33],[.28,.68],[.72,.68]].map((p,i)=><Circle key={i} cx={visualW*p[0]} cy={depthPx*p[1]} r={Math.max(2,Math.min(5,depthPx*.12))} fill="none" stroke="#46525A" strokeWidth="1"/>)}</>;
+    if(element.type==='Geladeira'||element.type==='Frigobar'||element.type==='Freezer')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(230,235,238,.62)" stroke={stroke} strokeWidth="1"/><Line x1={visualW*.48} y1="3" x2={visualW*.48} y2={depthPx-3} stroke="#82909A" strokeWidth=".8"/><Line x1={visualW*.52} y1={depthPx*.20} x2={visualW*.52} y2={depthPx*.80} stroke="#82909A" strokeWidth="1"/></>;
+    if(element.type==='Máquina de lavar')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(231,236,239,.58)" stroke={stroke} strokeWidth="1"/><Circle cx={visualW/2} cy={depthPx/2} r={Math.max(4,depthPx*.26)} fill="rgba(167,196,208,.30)" stroke="#6F7E87" strokeWidth=".8"/></>;
+    if(element.type==='Lava-louças')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="rgba(235,239,241,.72)" stroke={stroke} strokeWidth="1"/><Rect x="7" y="7" width={Math.max(5,visualW-14)} height={Math.max(4,depthPx*.16)} fill="#C8D0D5" stroke="#6F7E87" strokeWidth=".6"/><Line x1="8" y1={depthPx*.42} x2={visualW-8} y2={depthPx*.42} stroke="#7B878E" strokeWidth=".8"/></>;
+    if(element.type==='Forno'||element.type==='Micro-ondas')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill="#454E54" stroke={stroke} strokeWidth="1"/><Rect x="8" y={Math.max(6,depthPx*.25)} width={Math.max(5,visualW-20)} height={Math.max(5,depthPx*.48)} rx="1" fill="#1F292F" stroke="#8B969D" strokeWidth=".6"/><Circle cx={visualW-8} cy={Math.max(7,depthPx*.30)} r="1.4" fill="#C8D0D4"/></>;
+    if(element.type==='Coifa'||element.type==='Depurador')return <><Path d={`M 4 ${depthPx-4} L ${visualW*.22} 5 L ${visualW*.78} 5 L ${visualW-4} ${depthPx-4} Z`} fill="rgba(190,198,202,.62)" stroke={stroke} strokeWidth="1"/><Line x1={visualW*.25} y1={depthPx-7} x2={visualW*.75} y2={depthPx-7} stroke="#68757D" strokeWidth="1"/></>;
     if(element.type==='Cama solteiro'||element.type==='Cama casal'||element.type==='Beliche')return <><Rect x="2" y="2" width={visualW-4} height={depthPx-4} rx="3" fill="rgba(231,226,216,.48)" stroke={stroke} strokeWidth="1"/><Rect x={visualW*.10} y={depthPx*.08} width={visualW*.32} height={Math.max(5,depthPx*.20)} rx="2" fill="#F7F4EE" stroke="#8A8176" strokeWidth=".7"/><Line x1={visualW*.08} y1={depthPx*.34} x2={visualW*.92} y2={depthPx*.34} stroke="#A39A8F" strokeWidth=".7"/>{element.type==='Beliche'?<Line x1={visualW*.50} y1="3" x2={visualW*.50} y2={depthPx-3} stroke="#7F756B" strokeWidth="1"/>:null}</>;
     if(element.type==='Mesa')return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="4" fill="rgba(205,184,156,.22)" stroke={stroke} strokeWidth="1"/>{[[8,8],[visualW-8,8],[8,depthPx-8],[visualW-8,depthPx-8]].map((p,i)=><Circle key={i} cx={p[0]} cy={p[1]} r="2.2" fill="#776B5E"/>)}</>;
     if(element.type==='Sofá')return <><Rect x="3" y="5" width={visualW-6} height={depthPx-8} rx="6" fill="rgba(196,181,162,.25)" stroke={stroke} strokeWidth="1"/><Line x1="8" y1={depthPx*.28} x2={visualW-8} y2={depthPx*.28} stroke="#8E7D69" strokeWidth="1"/><Line x1={visualW*.5} y1={depthPx*.28} x2={visualW*.5} y2={depthPx-6} stroke="#A3917D" strokeWidth=".8"/></>;
     if(element.type==='Televisão')return <><Rect x="3" y={Math.max(3,depthPx*.25)} width={visualW-6} height={Math.max(7,depthPx*.50)} rx="2" fill="rgba(73,87,97,.14)" stroke={stroke} strokeWidth="1"/><Line x1={visualW*.50} y1={depthPx*.75} x2={visualW*.50} y2={depthPx*.92} stroke="#64717B" strokeWidth="1"/></>;
     return <><Rect x="3" y="3" width={visualW-6} height={depthPx-6} rx="2" fill={fill} stroke={stroke} strokeWidth="1"/><Line x1="7" y1={depthPx/2} x2={visualW-7} y2={depthPx/2} stroke="#87949D" strokeWidth=".6"/></>;
   };
-  return <GestureDetector gesture={objectGesture}><View style={{position:'absolute',left:x-visualW/2,top:y-depthPx/2,width:visualW,height:depthPx,transform:[{rotate:`${angle}deg`}],borderRadius:3,zIndex:visualLayer(element)}}><Svg width={visualW} height={depthPx}>{icon()}</Svg>{selected?<View style={{position:'absolute',left:3,right:3,bottom:2,alignItems:'center'}}><Text style={{fontSize:6.2,fontWeight:'900',color:BLUE,backgroundColor:'rgba(255,255,255,.82)',paddingHorizontal:3,borderRadius:3}}>{element.type} · {numFmt(element.width)}</Text></View>:null}</View></GestureDetector>;
+  return <GestureDetector gesture={objectGesture}><View style={{position:'absolute',left:x-visualW/2,top:y-depthPx/2,width:visualW,height:depthPx,transform:[{rotate:`${angle}deg`}],borderRadius:3,zIndex:visualLayer(element)}}><Svg width={visualW} height={depthPx}>{icon()}</Svg>{selected?<View style={{position:'absolute',left:3,right:3,bottom:2,alignItems:'center'}}><Text style={{fontSize:6.2,fontWeight:'900',color:BLUE,backgroundColor:'rgba(255,255,255,.82)',paddingHorizontal:3,borderRadius:3}}>{element.type} · P {numFmt(element.depth||0)}</Text></View>:null}</View></GestureDetector>;
 }
 
 function TechnicalElevationBase({wallW,wallH,px,width,height,objects=[],focusedCota=null,onFocusCota}) {
@@ -673,11 +672,11 @@ function TechnicalElevationBase({wallW,wallH,px,width,height,objects=[],focusedC
     <Rect x={x} y={y} width={ww} height={hh} fill="url(#elevWallPro)" stroke="#313A42" strokeWidth="2.2"/>
     <Rect x={x} y={baseY-1} width={ww} height={Math.max(16,height-baseY+1)} fill="url(#elevFloorPro)"/>
     {[.2,.4,.6,.8].map(t=><Line key={`tile-${t}`} x1={x+ww*t} y1={baseY} x2={x+ww*t-5} y2={height} stroke="#B7AA99" strokeWidth=".55" opacity=".55"/>)}
-    <Line x1={x} y1={y-19} x2={x+ww} y2={y-19} stroke={dim} strokeWidth="1.05"/>
-    <Line x1={x} y1={y-24} x2={x} y2={y-10} stroke={ext} strokeWidth=".8"/><Line x1={x+ww} y1={y-24} x2={x+ww} y2={y-10} stroke={ext} strokeWidth=".8"/>
-    {tick(x-3,y-22,x+3,y-16,'ta')}{tick(x+ww-3,y-22,x+ww+3,y-16,'tb')}
-    <Rect x={x+ww/2-27} y={y-28} width="54" height="16" rx="5" fill="#FFFFFF" stroke="#D9E3EC" strokeWidth=".6"/>
-    <SvgText x={x+ww/2} y={y-17} textAnchor="middle" fontSize="9.5" fontWeight="800" fill={dim}>{numFmt(wallW)} m</SvgText>
+    <Line x1={x} y1={y-9} x2={x+ww} y2={y-9} stroke={dim} strokeWidth="1.05"/>
+    <Line x1={x} y1={y-14} x2={x} y2={y-3} stroke={ext} strokeWidth=".8"/><Line x1={x+ww} y1={y-14} x2={x+ww} y2={y-3} stroke={ext} strokeWidth=".8"/>
+    {tick(x-3,y-12,x+3,y-6,'ta')}{tick(x+ww-3,y-12,x+ww+3,y-6,'tb')}
+    <Rect x={x+ww/2-27} y={y-17} width="54" height="16" rx="5" fill="#FFFFFF" stroke="#D9E3EC" strokeWidth=".6"/>
+    <SvgText x={x+ww/2} y={y-6} textAnchor="middle" fontSize="9.5" fontWeight="800" fill={dim}>{numFmt(wallW)} m</SvgText>
     <Line x1={x+ww+17} y1={y} x2={x+ww+17} y2={baseY} stroke={dim} strokeWidth="1.05"/>
     <Line x1={x+ww+10} y1={y} x2={x+ww+23} y2={y} stroke={ext} strokeWidth=".8"/><Line x1={x+ww+10} y1={baseY} x2={x+ww+23} y2={baseY} stroke={ext} strokeWidth=".8"/>
     {tick(x+ww+14,y-3,x+ww+20,y+3,'tc')}{tick(x+ww+14,baseY-3,x+ww+20,baseY+3,'td')}
@@ -696,11 +695,24 @@ function TechnicalElevationBase({wallW,wallH,px,width,height,objects=[],focusedC
       return vals.slice(0,-1).map((v,i)=>{
         const b=vals[i+1],seg=b-v;if(seg<.08)return null;
         const x1=x+v*px,x2=x+b*px,c=(x1+x2)/2,span=Math.abs(x2-x1);
-        const compact=span<44, tier=compact?(i%2):0, sy=14-tier*13;
+        const compact=span<44, mid=(v+b)/2;
+        // Um trecho só pode aparecer de um lado. A escolha é estável pelo objeto que ocupa
+        // o trecho; espaços entre objetos alternam para aproveitar cima/baixo sem duplicação.
+        const owner=objects.find(e=>{const l=clamp(e.left||0,0,wallW),r=clamp((e.left||0)+(e.width||0),0,wallW);return mid>l+.001&&mid<r-.001;});
+        const ownerIndex=owner?Math.max(0,objects.indexOf(owner)):i;
+        const topSide=(ownerIndex%2===0);
+        const sy=topSide?18:Math.min(height-16,baseY+24);
+        const edgeAnchor=(cut,topSide)=>{
+          const touching=objects.filter(e=>{const l=clamp(e.left||0,0,wallW),r=clamp((e.left||0)+(e.width||0),0,wallW);return Math.abs(l-cut)<.002||Math.abs(r-cut)<.002});
+          if(!touching.length)return topSide?wallTop:baseY;
+          const ys=touching.map(e=>({top:y+(wallH-(e.bottom||0)-(e.height||0))*px,bottom:y+(wallH-(e.bottom||0))*px}));
+          return topSide?Math.min(...ys.map(q=>q.top)):Math.max(...ys.map(q=>q.bottom));
+        };
+        const extY1=edgeAnchor(v,topSide),extY2=edgeAnchor(b,topSide);
         const key=`front-${i}`,focus=focusedCota===key,labelW=focus?54:(compact?34:30),labelH=focus?20:12,labelFont=focus?11.5:6.8;
         return <React.Fragment key={`fdu-${i}`}>
-          <Line x1={x1} y1={wallTop} x2={x1} y2={sy} stroke="#A6B3BE" strokeWidth=".65"/>
-          <Line x1={x2} y1={wallTop} x2={x2} y2={sy} stroke="#A6B3BE" strokeWidth=".65"/>
+          <Line x1={x1} y1={extY1} x2={x1} y2={sy} stroke="#A6B3BE" strokeWidth=".65"/>
+          <Line x1={x2} y1={extY2} x2={x2} y2={sy} stroke="#A6B3BE" strokeWidth=".65"/>
           <Line x1={x1} y1={sy} x2={x2} y2={sy} stroke="#718496" strokeWidth=".8"/>
           <Line x1={x1} y1={sy-4} x2={x1} y2={sy+4} stroke="#718496" strokeWidth=".8"/>
           <Line x1={x2} y1={sy-4} x2={x2} y2={sy+4} stroke="#718496" strokeWidth=".8"/>
@@ -738,8 +750,8 @@ function PerspectiveCanvas({room, selectedWall=0, selectedElement=null, wallHigh
     const stroke=active?BLUE:'#49545C',fill='#FBFCFD';
     if(e.type==='Tomada')return <React.Fragment key={e.id}><Rect x={m[0]-7} y={m[1]-6} width="14" height="12" rx="2.5" fill={fill} stroke={stroke} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Circle cx={m[0]-2.4} cy={m[1]-1} r="1.2" fill={stroke}/><Circle cx={m[0]+2.4} cy={m[1]-1} r="1.2" fill={stroke}/><Path d={`M ${m[0]} ${m[1]+1} l -2 3 h 4 Z`} fill={stroke}/></React.Fragment>;
     if(e.type==='Interruptor')return <React.Fragment key={e.id}><Rect x={m[0]-6} y={m[1]-8} width="12" height="16" rx="2" fill={fill} stroke={stroke} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Rect x={m[0]-3} y={m[1]-5} width="6" height="10" rx="1" fill="#E8EDF0" stroke={stroke} strokeWidth=".7"/></React.Fragment>;
-    if(e.type==='Água')return <React.Fragment key={e.id}><Circle cx={m[0]} cy={m[1]} r="6" fill="#E9F6FC" stroke={active?BLUE:'#39738C'} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Circle cx={m[0]} cy={m[1]} r="2.2" fill="#78C7E8"/></React.Fragment>;
-    if(e.type==='Esgoto')return <React.Fragment key={e.id}><Circle cx={m[0]} cy={m[1]} r="6" fill={fill} stroke={stroke} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Circle cx={m[0]} cy={m[1]} r="3" fill="none" stroke="#75818A" strokeWidth="1"/></React.Fragment>;
+    if(e.type==='Água')return <Circle key={e.id} cx={m[0]} cy={m[1]} r="5" fill="#299FD6" stroke={active?BLUE:'none'} strokeWidth={active?1.5:0} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/>;
+    if(e.type==='Esgoto')return <Circle key={e.id} cx={m[0]} cy={m[1]} r="5" fill="#20262D" stroke={active?BLUE:'none'} strokeWidth={active?1.5:0} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/>;
     if(e.type==='Gás')return <React.Fragment key={e.id}><Circle cx={m[0]} cy={m[1]} r="6" fill="#FFF8E7" stroke={active?BLUE:'#75602D'} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Path d={`M ${m[0]} ${m[1]-4} C ${m[0]+4} ${m[1]} ${m[0]+2} ${m[1]+4} ${m[0]} ${m[1]+4} C ${m[0]-3} ${m[1]+4} ${m[0]-4} ${m[1]+1} ${m[0]} ${m[1]-4} Z`} fill="#E6C15D"/></React.Fragment>;
     return <React.Fragment key={e.id}><Rect x={m[0]-6} y={m[1]-6} width="12" height="12" rx="2" fill={fill} stroke={stroke} strokeWidth={active?1.8:1.1} onPress={stop(()=>onSelectElement?.(e.id,e.wall))}/><Rect x={m[0]-3} y={m[1]-2} width="6" height="4" fill="#DDE6EB" stroke={stroke} strokeWidth=".7"/></React.Fragment>;
   };
@@ -859,16 +871,14 @@ function PlanEditor({ project, room, draftMeta, onBack, onSave, onSaveExit, onCh
   const updateWallMeasurements=(i,width,height)=>{const lengths=[...room.lengths];lengths[i]=width;onSave({...room,lengths,height},false);setEditWall(null)};
   const changeCount=n=>{let lengths=[...room.lengths];while(lengths.length<n) lengths.push(lengths.length%2===0?3.2:2.8);lengths=lengths.slice(0,n);const elements=(room.elements||[]).filter(e=>isFreePlanType(e.type)||e.free===true||e.wall<n);setSelected(Math.min(selected,n-1));onSave({...room,wallCount:n,lengths,elements},false)};
   const openGroup=g=>{setAddGroup(g);setAddOpen(true)};
-  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const wallW=room.lengths[selected]||3;const free=isFreePlanType(type);const internal=isInternalWall(type);const anchorWall=selected;let left=0;
-    if(internal){const t=internalWallThickness({...d,type});left=clamp((wallW-t)/2,0,Math.max(0,wallW-t));}
-    else if(!free){const segments=wallAvailableSegments(room,anchorWall).filter(seg=>seg.width>=Number(d.width||.2));const seg=(segments.length?segments:wallAvailableSegments(room,anchorWall)).sort((a,b)=>b.width-a.width)[0]||{start:0,end:wallW,width:wallW};left=clamp(seg.start+(seg.width-Number(d.width||.2))/2,seg.start,Math.max(seg.start,seg.end-Number(d.width||.2)));}
-    const el={id:uid(),type,wall:anchorWall,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,swing:d.swing||undefined,left,...(free?{free:true,freeX:.50,freeY:.58}:{free:false})};onSave({...room,elements:[...(room.elements||[]),el]},false);setSelectedElement(el.id);setCanvasFree(false);setAddOpen(false)};
-  const updateElement=o=>{const fixed=constrainElementToWallSegments(room,o);onSave({...room,elements:(room.elements||[]).map(e=>e.id===fixed.id?fixed:e)},false)};
+  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const wallW=room.lengths[selected]||3;const free=isFreePlanType(type);const internal=isInternalWall(type);const anchorWall=selected;let freeX=.50,freeY=.58;if(internal&&walls[anchorWall]){const w=walls[anchorWall],midX=(w.a.x+w.b.x)/2,midY=(w.a.y+w.b.y)/2,inward=planInteriorVector(room.wallCount||4,anchorWall),ppm=Math.max(20,Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y)/Math.max(.1,room.lengths[anchorWall]||1)),lenM=type==='Parede vertical'?Number(d.depth||1.50):Number(d.width||1.50),halfPx=lenM*ppm/2;freeX=clamp((midX+inward[0]*halfPx)/canvasW,.05,.95);freeY=clamp((midY+inward[1]*halfPx)/canvasH,.08,.92);}const el={id:uid(),type,wall:anchorWall,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,swing:d.swing||undefined,left:clamp((wallW-d.width)/2,0,wallW),...(free?{free:true,freeX,freeY}:{})};onSave({...room,elements:[...(room.elements||[]),el]},false);setSelectedElement(el.id);setCanvasFree(false);setAddOpen(false)};
+  const updateElement=o=>onSave({...room,elements:(room.elements||[]).map(e=>e.id===o.id?o:e)},false);
   const deleteSelected=()=>{if(!selectedElement)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onSave({...room,elements:(room.elements||[]).filter(e=>e.id!==selectedElement)},false);setSelectedElement(null);setEditElementOpen(false)});};
-  const selectedWall=walls[selected], selectedObj=(room.elements||[]).find(e=>e.id===selectedElement), selectedSegment=selectedObj?wallSegmentForElement(room,selectedObj):null, modalObj=(selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?{...selectedObj,left:Number(selectedObj.left||0)-selectedSegment.start}:selectedObj, options=[{n:1,label:'1',shape:'—'},{n:2,label:'2',shape:'⌞'},{n:3,label:'3',shape:'⊔'},{n:4,label:'4',shape:'□'}];
-  const frontW=room.lengths[selected]||3.2, frontH=room.height||2.65, frontPx=Math.min((canvasW-54)/frontW,(canvasH-56)/frontH),
-    frontObjects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===selected&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(constrainElementToWallSegments(room,e),selected,room));
+  const selectedWall=walls[selected], selectedObj=(room.elements||[]).find(e=>e.id===selectedElement), options=[{n:1,label:'1',shape:'—'},{n:2,label:'2',shape:'⌞'},{n:3,label:'3',shape:'⊔'},{n:4,label:'4',shape:'□'}];
+  const frontW=room.lengths[selected]||3.2, frontH=room.height||2.65, frontPx=Math.min((canvasW-76)/frontW,(canvasH-112)/frontH),
+    frontObjects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===selected&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(e,selected,room));
   const planPpm=walls?.length?Math.max(20,Math.hypot(walls[0].b.x-walls[0].a.x,walls[0].b.y-walls[0].a.y)/Math.max(.1,room.lengths?.[0]||1)):70;
+  const roomBounds=walls?.length?{minX:Math.min(...walls.flatMap(w=>[w.a.x,w.b.x])),maxX:Math.max(...walls.flatMap(w=>[w.a.x,w.b.x])),minY:Math.min(...walls.flatMap(w=>[w.a.y,w.b.y])),maxY:Math.max(...walls.flatMap(w=>[w.a.y,w.b.y]))}:null;
   const frontUpdate=o=>updateElement(o);
   function freeCanvas(){setSelectedElement(null);setCanvasFree(true);setFocusedCota(null)}
   const chooseWall=i=>{tapConsumedRef.current=true;setSelected(i);setSelectedElement(null);setCanvasFree(false);setFocusedCota(null)};
@@ -881,13 +891,13 @@ function PlanEditor({ project, room, draftMeta, onBack, onSave, onSaveExit, onCh
   return <View style={styles.editorScreen}><View style={styles.editorTop}><Pressable onPress={onBack}><Text style={styles.back}>‹ Projeto</Text></Pressable><View style={{flex:1,marginHorizontal:10}}><Text style={styles.editorTitle}>{room.name}</Text><Text style={styles.editorSub}>{project.client} · {project.name}</Text></View><Pressable onPress={onSaveExit} style={styles.saveBtn}><Text style={styles.saveBtnText}>Salvar</Text></Pressable></View>
     <View style={styles.toolBar}><Text style={styles.viewsLabel}>Vistas</Text><View style={styles.viewSegments}><Pressable onPress={()=>changeView('plan')} style={[styles.viewSegment,viewMode==='plan'&&styles.viewSegmentOn]}><Text style={[styles.viewSegmentText,viewMode==='plan'&&styles.viewSegmentTextOn]}>Planta</Text></Pressable><Pressable onPress={()=>changeView('front')} style={[styles.viewSegment,viewMode==='front'&&styles.viewSegmentOn]}><Text style={[styles.viewSegmentText,viewMode==='front'&&styles.viewSegmentTextOn]}>Paredes</Text></Pressable></View><Text style={styles.zoomBadge}>{Math.round(zoom*100)}%</Text></View>
     {viewMode==='front'?<View style={styles.wallViewSelector}><Text style={styles.wallViewLabel}>VISTA FRONTAL</Text><View style={styles.wallViewTabs}>{room.lengths.map((_v,i)=><Pressable key={i} onPress={()=>{setSelected(i);setSelectedElement(null);setCanvasFree(true);setOffset({x:0,y:0});setZoom(1)}} style={[styles.wallViewTab,selected===i&&styles.wallViewTabOn]}><Text style={[styles.wallViewTabText,selected===i&&styles.wallViewTabTextOn]}>Parede {String.fromCharCode(65+i)}</Text></Pressable>)}</View></View>:null}
-    {viewMode==='plan'?<GestureDetector gesture={gesture}><View style={[styles.planCanvas,{width:canvasW,height:canvasH}]}><GridBackground step={18}/><View pointerEvents="box-none" style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><PlanTechnicalLayer walls={walls} room={room} selected={selected} selectedElement={selectedElement} canvasFree={canvasFree} onChooseWall={chooseWall} onEditWall={setEditWall} width={canvasW} height={canvasH} focusedCota={focusedCota} onFocusCota={setFocusedCota}/>{(room.elements||[]).filter(e=>PLAN_GROUPS.some(k=>GROUPS.find(g=>g.key===k)?.items.includes(e.type))&&!isInternalWall(e.type)).map(e=>walls[e.wall]?<PlanElement key={e.id} element={e} wall={walls[e.wall]} wallLength={room.lengths[e.wall]||1} wallCount={room.wallCount||4} zoom={zoom} selected={e.id===selectedElement} onSelect={()=>chooseElement(e.id,e.wall)} onChange={updateElement} pinchingRef={pinchingRef}/>:null)}{(room.elements||[]).filter(e=>isEquipment(e.type)||isReservedSpace(e.type)||isInternalWall(e.type)).map(e=>{const free=isFreePlanType(e.type)||e.free===true;const wi=elementWallIndex(e,room);const w=walls[wi]||walls[0];const normalized=isInternalWall(e.type)?{...e,wall:wi}:e;return w?<PlanEquipmentElement key={`eq-${e.id}`} element={normalized} wall={w} wallLength={room.lengths[wi]||room.lengths[0]||1} wallCount={room.wallCount} zoom={zoom} selected={e.id===selectedElement} onSelect={()=>chooseElement(e.id,free?null:e.wall)} onChange={updateElement} pinchingRef={pinchingRef} canvasW={canvasW} canvasH={canvasH} planPpm={planPpm}/>:null})}</View></View></GestureDetector>:<GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:canvasW,height:canvasH}]}><View pointerEvents="box-none" style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><TechnicalElevationBase wallW={frontW} wallH={frontH} px={frontPx} width={canvasW} height={canvasH} objects={frontObjects} focusedCota={focusedCota} onFocusCota={setFocusedCota}/>{frontObjects.map(o=><WallObject key={o.id} obj={o} wallW={frontW} wallH={frontH} boardW={canvasW} boardH={canvasH} px={frontPx} selected={o.id===selectedElement} onSelect={()=>chooseElement(o.id,o.wall)} onEdit={()=>chooseElement(o.id,o.wall)} onChange={frontUpdate} pinchingRef={pinchingRef}/>)}</View></View></GestureDetector>}
-    <View style={styles.selectedCard}><View style={{flex:1}}><Text style={styles.selectedKicker}>{selectedObj?'ITEM SELECIONADO':canvasFree?'NADA SELECIONADO':'PAREDE SELECIONADA'}</Text><Text style={styles.selectedTitle}>{selectedObj?(isFreePlanType(selectedObj.type)||selectedObj.free===true?`${selectedObj.type} · livre no ambiente`:`${selectedObj.type} · Parede ${String.fromCharCode(65+elementWallIndex(selectedObj,room))}`):canvasFree?'Tela livre · 1 dedo move · pinça dá zoom':`Parede ${String.fromCharCode(65+selected)} · ${mFmt(selectedWall?.length||0)}`}</Text></View>{(selectedObj||!canvasFree)?<Pressable onPress={()=>selectedObj?setEditElementOpen(true):setEditWall(selected)} style={[styles.miniBtn,styles.miniBtnPrimary]}><Text style={[styles.miniBtnText,{color:WHITE}]}>Ajustar</Text></Pressable>:null}</View>
+    {viewMode==='plan'?<GestureDetector gesture={gesture}><View style={[styles.planCanvas,{width:canvasW,height:canvasH}]}><GridBackground step={18}/><View pointerEvents="box-none" style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><PlanTechnicalLayer walls={walls} room={room} selected={selected} selectedElement={selectedElement} canvasFree={canvasFree} onChooseWall={chooseWall} onEditWall={setEditWall} width={canvasW} height={canvasH} focusedCota={focusedCota} onFocusCota={setFocusedCota}/>{(room.elements||[]).filter(e=>PLAN_GROUPS.some(k=>GROUPS.find(g=>g.key===k)?.items.includes(e.type))&&!isInternalWall(e.type)).map(e=>walls[e.wall]?<PlanElement key={e.id} element={e} wall={walls[e.wall]} wallLength={room.lengths[e.wall]||1} wallCount={room.wallCount||4} zoom={zoom} selected={e.id===selectedElement} onSelect={()=>chooseElement(e.id,e.wall)} onChange={updateElement} pinchingRef={pinchingRef}/>:null)}{(room.elements||[]).filter(e=>isEquipment(e.type)||isReservedSpace(e.type)||isInternalWall(e.type)).map(e=>{const free=isFreePlanType(e.type)||e.free===true;const wi=elementWallIndex(e,room);const w=walls[wi]||walls[0];const normalized=isInternalWall(e.type)?{...e,wall:wi}:e;return w?<PlanEquipmentElement key={`eq-${e.id}`} element={normalized} wall={w} wallLength={room.lengths[wi]||room.lengths[0]||1} wallCount={room.wallCount} zoom={zoom} selected={e.id===selectedElement} onSelect={()=>chooseElement(e.id,free?null:e.wall)} onChange={updateElement} pinchingRef={pinchingRef} canvasW={canvasW} canvasH={canvasH} planPpm={planPpm} roomBounds={roomBounds}/>:null})}</View></View></GestureDetector>:<GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:canvasW,height:canvasH}]}><View pointerEvents="box-none" style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><TechnicalElevationBase wallW={frontW} wallH={frontH} px={frontPx} width={canvasW} height={canvasH} objects={frontObjects} focusedCota={focusedCota} onFocusCota={setFocusedCota}/>{frontObjects.map(o=><WallObject key={o.id} obj={o} wallW={frontW} wallH={frontH} boardW={canvasW} boardH={canvasH} px={frontPx} selected={o.id===selectedElement} onSelect={()=>chooseElement(o.id,o.wall)} onEdit={()=>chooseElement(o.id,o.wall)} onChange={frontUpdate} pinchingRef={pinchingRef}/>)}</View></View></GestureDetector>}
+    <View style={styles.selectedCard}><View style={{flex:1}}><Text style={styles.selectedKicker}>{selectedObj?'ITEM SELECIONADO':canvasFree?'NADA SELECIONADO':'PAREDE SELECIONADA'}</Text><Text style={styles.selectedTitle}>{selectedObj?(isFreePlanType(selectedObj.type)||selectedObj.free===true?`${selectedObj.type} · livre no ambiente${viewMode==='plan'&&selectedObj.depth!=null?` · Prof. ${mFmt(selectedObj.depth)}`:viewMode==='front'?` · ${mFmt(selectedObj.width)} × ${mFmt(selectedObj.height)}`:''}`:`${selectedObj.type} · Parede ${String.fromCharCode(65+elementWallIndex(selectedObj,room))}${viewMode==='plan'&&selectedObj.depth!=null?` · Prof. ${mFmt(selectedObj.depth)}`:viewMode==='front'?` · ${mFmt(selectedObj.width)} × ${mFmt(selectedObj.height)}`:''}`):canvasFree?'Tela livre · 1 dedo move · pinça dá zoom':`Parede ${String.fromCharCode(65+selected)} · ${mFmt(selectedWall?.length||0)}`}</Text></View>{(selectedObj||!canvasFree)?<Pressable onPress={()=>selectedObj?setEditElementOpen(true):setEditWall(selected)} style={[styles.miniBtn,styles.miniBtnPrimary]}><Text style={[styles.miniBtnText,{color:WHITE}]}>Ajustar</Text></Pressable>:null}</View>
     <View style={styles.wallCountRowCompact}>{options.map(o=><Pressable key={o.n} onPress={()=>changeCount(o.n)} style={[styles.wallCountCompact,room.wallCount===o.n&&styles.wallCountCompactOn]}><Text style={[styles.wallCompactShape,room.wallCount===o.n&&{color:WHITE}]}>{o.shape}</Text><Text style={[styles.wallCompactText,room.wallCount===o.n&&{color:WHITE}]}>{o.label} {o.n===1?'parede':'paredes'}</Text></Pressable>)}</View>
     <View style={styles.categoryDock}>{GROUPS.filter(g=>(viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS).includes(g.key)).map(g=><Pressable key={g.key} onPress={()=>openGroup(g.key)} style={styles.categoryBtn}><Text style={styles.categoryIcon}>{g.icon}</Text><Text style={styles.categoryText}>{g.key}</Text></Pressable>)}</View>
     <View style={styles.finishDock}><Pressable onPress={onPhotos} style={styles.finishBtn}><Text style={styles.finishIcon}>📷</Text><Text style={styles.finishText}>Fotos</Text></Pressable><Pressable onPress={()=>setNotesOpen(true)} style={styles.finishBtn}><Text style={styles.finishIcon}>✎</Text><Text style={styles.finishText}>Notas</Text></Pressable><Pressable onPress={()=>setSummaryOpen(true)} style={styles.finishBtn}><Text style={styles.finishIcon}>☷</Text><Text style={styles.finishText}>Resumo</Text></Pressable><Pressable onPress={onFinish} style={[styles.finishBtn,styles.finishBtnPrimary]}><Text style={[styles.finishIcon,{color:WHITE}]}>✓</Text><Text style={[styles.finishText,{color:WHITE}]}>Concluir</Text></Pressable></View>
     {selectedObj?<View style={styles.adjustRow}><Text style={styles.dragHint}>{selectedObj.type} selecionado · use Ajustar para editar</Text><Pressable onPress={deleteSelected} style={styles.quickDelete}><Text style={styles.quickDeleteText}>Excluir</Text></Pressable></View>:null}
-    <NotesModal visible={notesOpen} initial={room.notes||''} onClose={()=>setNotesOpen(false)} onSave={notes=>onSave({...room,notes},false)}/><SummaryModal visible={summaryOpen} room={room} onClose={()=>setSummaryOpen(false)}/><WallMeasureModal visible={editWall!==null} title={`Parede ${String.fromCharCode(65+(editWall||0))}`} initialWidth={editWall!==null?(room.lengths[editWall]||0):0} initialHeight={room.height||2.65} onCancel={()=>setEditWall(null)} onSave={(width,height)=>updateWallMeasurements(editWall,width,height)}/><AddSheet visible={addOpen} initialGroup={addGroup} allowedGroups={viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS} excludedItems={viewMode==='front'?FREE_PLAN_TYPES:[]} onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={selected}/><ObjectModal visible={editElementOpen} object={modalObj} wallW={(selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?selectedSegment.width:(room.lengths[elementWallIndex(selectedObj||{wall:selected},room)]||3.2)} wallH={room.height||2.65} onClose={()=>setEditElementOpen(false)} onSave={o=>updateElement((selectedObj&&selectedSegment&&!isInternalWall(selectedObj.type)&&!isFreePlanType(selectedObj.type)&&selectedObj.free!==true)?{...o,left:Number(o.left||0)+selectedSegment.start}:o)} onDelete={deleteSelected}/>
+    <NotesModal visible={notesOpen} initial={room.notes||''} onClose={()=>setNotesOpen(false)} onSave={notes=>onSave({...room,notes},false)}/><SummaryModal visible={summaryOpen} room={room} onClose={()=>setSummaryOpen(false)}/><WallMeasureModal visible={editWall!==null} title={`Parede ${String.fromCharCode(65+(editWall||0))}`} initialWidth={editWall!==null?(room.lengths[editWall]||0):0} initialHeight={room.height||2.65} onCancel={()=>setEditWall(null)} onSave={(width,height)=>updateWallMeasurements(editWall,width,height)}/><AddSheet visible={addOpen} initialGroup={addGroup} allowedGroups={viewMode==='front'?FRONT_GROUPS:PLAN_ADD_GROUPS} excludedItems={viewMode==='front'?FREE_PLAN_TYPES:[]} onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={selected}/><ObjectModal visible={editElementOpen} object={selectedObj} wallW={room.lengths[selected]||3.2} wallH={room.height||2.65} onClose={()=>setEditElementOpen(false)} onSave={updateElement} onDelete={deleteSelected}/>
   </View>;
 }
 
@@ -914,7 +924,7 @@ function PlanPreviewStatic({room,width=360,height=230}){
 }
 function FrontPreviewStatic({room,wallIndex=0,width=360,height=230}){
   const wallW=room.lengths[wallIndex]||3.2,wallH=room.height||2.65,px=Math.min((width-60)/wallW,(height-60)/wallH),
-    objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):constrainElementToWallSegments(room,e)).sort((a,b)=>visualLayer(a)-visualLayer(b));
+    objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>frontObjectForRoom(e,wallIndex,room)).sort((a,b)=>visualLayer(a)-visualLayer(b));
   return <View style={{width,height,overflow:'hidden',borderRadius:12}}><TechnicalElevationBase wallW={wallW} wallH={wallH} px={px} width={width} height={height}/>{objects.map(o=>{const opening=isOpening(o.type),equip=isEquipment(o.type),reserved=isReservedSpace(o.type),structure=isStructure(o.type),point=isPoint(o.type),internal=isInternalWall(o.type),vw=internal?Math.max(5,o.width*px):Math.max(o.width*px,opening||equip||reserved?28:18),vh=internal?Math.max(20,o.height*px):(o.type==='Pia'?Math.max(o.height*px,12):Math.max(o.height*px,opening||equip||reserved?26:18)),x=27+o.left*px,y=46+(wallH-o.bottom-o.height)*px;return <View key={o.id} pointerEvents="none" style={{position:'absolute',left:x,top:y,width:vw,height:vh,borderWidth:internal?1.4:1,borderColor:internal?'#59636B':'#5B6670',backgroundColor:internal?'#D4D9DD':point?'transparent':'rgba(255,255,255,.2)',zIndex:visualLayer(o)}}>{internal?null:<ElementVisual type={o.type} width={vw} height={vh}/>}</View>})}</View>;
 }
 function ExportPreview({project,room,onBack,onExport}){
@@ -966,16 +976,14 @@ function ObjectModal({ visible, object, wallW, wallH, onClose, onSave, onDelete 
   const diagramDragStart=useRef(0);
   const voiceSessionRef=useRef(false);
   const voiceOptions={lang:'pt-BR',interimResults:true,continuous:true,maxAlternatives:1,addsPunctuation:false};
-  const isVoiceSaveCommand=t=>/(?:^|\s)(?:salvar|salva|confirmar|confirma)(?:\s+(?:medidas?|medição))?[.! ]*$/i.test(String(t||'').trim());
-  const stripVoiceSaveCommand=t=>String(t||'').replace(/(?:^|\s)(?:salvar|salva|confirmar|confirma)(?:\s+(?:medidas?|medição))?[.! ]*$/i,'').trim();
   useEffect(()=>{if(object){
     const ow=Number(object.width||0),oh=Number(object.height||0),ol=Number(object.left||0),ob=Number(object.bottom||0);
     setW(numFmt(ow));setH(numFmt(oh));setLeft(numFmt(ol));setRight(numFmt(Math.max(0,wallW-ol-ow)));setBottom(numFmt(ob));setTop(numFmt(Math.max(0,wallH-ob-oh)));setDepth(numFmt(object.depth||.15));setThickness(numFmt(object.thickness||.03));setSwing(object.swing||'left');setLayer(visualLayer(object));
   }},[visible,object?.id,wallW,wallH]);
   useEffect(()=>()=>{voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}},[]);
-  useSpeechRecognitionEvent('start',()=>{if(visible&&object){setVoiceListening(true);setVoiceMessage('Ouvindo… fale todas as medidas e diga “salvar” ou “confirmar” quando terminar.')}});
+  useSpeechRecognitionEvent('start',()=>{if(visible&&object){setVoiceListening(true);setVoiceMessage('Ouvindo… fale todas as medidas e toque em Parar quando terminar.')}});
   useSpeechRecognitionEvent('end',()=>{if(!visible||!object)return;setVoiceListening(false);if(voiceSessionRef.current){setTimeout(()=>{if(voiceSessionRef.current&&visible){try{ExpoSpeechRecognitionModule.start(voiceOptions);}catch(_e){} }},180);}});
-  useSpeechRecognitionEvent('result',event=>{if(!visible||!object)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;if(event.isFinal){const command=isVoiceSaveCommand(t),spoken=stripVoiceSaveCommand(t);setVoiceText(prev=>[prev,t].filter(Boolean).join(' · '));if(spoken)applyVoiceMeasures(spoken);if(command){const v=extractVoiceMeasures(spoken);const nw=clamp(v.width!=null?v.width:parseMeters(w,object.width),.02,wallW),nh=clamp(v.height!=null?v.height:parseMeters(h,object.height),.02,wallH),nl=clamp(v.left!=null?v.left:(v.right!=null?wallW-v.right-nw:parseMeters(left,object.left)),0,Math.max(0,wallW-nw)),nb=clamp(v.bottom!=null?v.bottom:(v.top!=null?wallH-v.top-nh:parseMeters(bottom,object.bottom)),0,Math.max(0,wallH-nh));voiceSessionRef.current=false;try{ExpoSpeechRecognitionModule.stop();}catch(_e){}setVoiceListening(false);setVoiceMessage('Medidas confirmadas por voz. Salvando…');const saved={...object,width:nw,height:nh,left:nl,bottom:nb,depth:hasDepth?clamp(v.depth!=null?v.depth:parseMeters(depth,object.depth||.15),.01,5):object.depth,thickness:object.type==='Pia'?clamp(v.thickness!=null?v.thickness:parseMeters(thickness,object.thickness||.03),.005,.5):object.thickness,swing:object.type==='Porta'?swing:object.swing,layer};setTimeout(()=>{onSave(saved);onClose();},80);}}else setVoiceText(t);});
+  useSpeechRecognitionEvent('result',event=>{if(!visible||!object)return;const t=(event.results||[]).map(r=>r?.transcript||'').filter(Boolean).join(' ').trim();if(!t)return;if(event.isFinal){setVoiceText(prev=>[prev,t].filter(Boolean).join(' · '));applyVoiceMeasures(t);}else setVoiceText(t);});
   useSpeechRecognitionEvent('error',event=>{if(!visible||!object)return;if(event.error==='aborted')return;if(event.error==='no-speech'&&voiceSessionRef.current)return;voiceSessionRef.current=false;setVoiceListening(false);setVoiceMessage('Não consegui ouvir. Toque no microfone e tente novamente.');});
   if(!object)return null;
   const hasDepth=isEquipment(object.type)||isStructure(object.type)||isReservedSpace(object.type)||['Rodapé','Sanca'].includes(object.type);
@@ -1013,7 +1021,7 @@ function ObjectModal({ visible, object, wallW, wallH, onClose, onSave, onDelete 
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}><KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={8}><Pressable style={{flex:1}} onPress={onClose}/><View style={[styles.sheet,styles.techEditSheet,{maxHeight:RAW_H*.88}]}><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={{paddingBottom:Platform.OS==='ios'?34:14}} showsVerticalScrollIndicator={false}><View style={styles.sheetHandle}/>
     <View style={styles.techEditHead}><ItemIcon type={object.type} size={46}/><View style={{flex:1}}><Text style={styles.techEditEyebrow}>EDIÇÃO TÉCNICA</Text><Text style={styles.techEditTitle}>{object.type}</Text><Text style={styles.formHint}>{freeObject?'Livre no ambiente · dimensões técnicas':`Parede ${String.fromCharCode(65+object.wall)} · ${mFmt(wallW)} × ${mFmt(wallH)}`}</Text></View>{onDelete?<Pressable onPress={onDelete} style={styles.deletePill}><Text style={styles.deletePillText}>Excluir</Text></Pressable>:null}</View>
     <View style={styles.techInfoStrip}><Text style={styles.techInfoTitle}>Medidas em metros</Text><Text style={styles.techInfoText}>Digite a medida real. As distâncias opostas são recalculadas para conferência.</Text></View>
-    <View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… ao terminar diga “salvar” ou “confirmar”.':'Ex.: “largura 1,80, profundidade 60, do piso 90, salvar”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View>
+    <View style={styles.voiceMeasureCard}><View style={{flex:1}}><Text style={styles.voiceMeasureTitle}>Preencher por voz</Text><Text style={styles.voiceMeasureHint}>{voiceListening?'Pode continuar falando… toque em Parar ao terminar.':'Ex.: “largura 1,80, profundidade 60, espessura 3, do piso 90”'}</Text>{voiceText?<Text style={styles.voiceTranscript}>“{voiceText}”</Text>:null}{voiceMessage?<Text style={styles.voiceMessage}>{voiceMessage}</Text>:null}</View><Pressable onPress={toggleVoice} style={[styles.voiceMicBtn,voiceListening&&styles.voiceMicBtnOn]}><Text style={styles.voiceMicIcon}>{voiceListening?'■':'🎙️'}</Text><Text style={[styles.voiceMicText,voiceListening&&{color:WHITE}]}>{voiceListening?'Parar':'Falar'}</Text></Pressable></View>
     <Text style={styles.formSection}>Dimensões</Text><View style={styles.twoCols}><MiniField label="Largura" value={w} onChange={setWidthSmart}/><MiniField label="Altura" value={h} onChange={setHeightSmart}/>{hasDepth?<MiniField label="Profundidade" value={depth} onChange={setDepth}/>:null}{object.type==='Pia'?<MiniField label="Espessura" value={thickness} onChange={setThickness}/>:null}</View>
     <Text style={styles.formSection}>Camada visual</Text><View style={styles.swingRow}><Pressable onPress={()=>setLayer(0)} style={[styles.swingOption,layer<=0&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,layer<=0&&styles.swingOptionTextOn]}>Enviar para trás</Text></Pressable><Pressable onPress={()=>setLayer(5)} style={[styles.swingOption,layer>0&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,layer>0&&styles.swingOptionTextOn]}>Trazer para frente</Text></Pressable></View>
     {object.type==='Porta'?<><Text style={styles.formSection}>Sentido de abertura</Text><Text style={styles.formHint}>A folha abre para dentro do ambiente.</Text><View style={styles.swingRow}><Pressable onPress={()=>setSwing('left')} style={[styles.swingOption,swing==='left'&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,swing==='left'&&styles.swingOptionTextOn]}>↙ Esquerda</Text></Pressable><Pressable onPress={()=>setSwing('right')} style={[styles.swingOption,swing==='right'&&styles.swingOptionOn]}><Text style={[styles.swingOptionText,swing==='right'&&styles.swingOptionTextOn]}>Direita ↘</Text></Pressable></View></>:null}
@@ -1029,18 +1037,11 @@ function MiniField({label,value,onChange}){return <View style={styles.miniField}
 function Elevation({ project, room, wallIndex, onBack, onUpdateRoom }) {
   const wallW=room.lengths[wallIndex]||3.2, wallH=room.height||2.65, boardW=APP_W-24, boardH=Math.min(500,RAW_H*.56); const px=Math.min((boardW-54)/wallW,(boardH-72)/wallH);
   const [selectedId,setSelectedId]=useState(null),[editOpen,setEditOpen]=useState(false),[addOpen,setAddOpen]=useState(false); const [zoom,setZoom]=useState(1),[offset,setOffset]=useState({x:0,y:0}); const pinchStart=useRef(1),panStart=useRef({x:0,y:0});
-  const objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):constrainElementToWallSegments(room,e)), selected=objects.find(e=>e.id===selectedId);
-  const updateObj=o=>{
-    const original=(room.elements||[]).find(x=>x.id===o.id);
-    // A parede interna é posicionada na Planta. Na vista frontal ela é apenas uma
-    // projeção técnica do ponto de encontro, evitando que um arraste frontal
-    // altere a geometria validada da Planta.
-    const next=isInternalWall(original?.type)?original:constrainElementToWallSegments(room,o);
-    onUpdateRoom({...room,elements:(room.elements||[]).map(x=>x.id===o.id?next:x)},false);
-  };
-  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const raw={id:uid(),type,wall:wallIndex,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,left:clamp((wallW-d.width)/2,0,wallW)};const o=constrainElementToWallSegments(room,raw);onUpdateRoom({...room,elements:[...(room.elements||[]),o]},false);setSelectedId(o.id);setAddOpen(false)};
+  const objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):e), selected=objects.find(e=>e.id===selectedId);
+  const updateObj=o=>onUpdateRoom({...room,elements:(room.elements||[]).map(x=>x.id===o.id?o:x)},false);
+  const addElement=type=>{const d=DEFAULTS[type]||{width:.2,height:.2,bottom:0};const o={id:uid(),type,wall:wallIndex,width:d.width,height:d.height,bottom:d.bottom,depth:d.depth||.15,thickness:d.thickness,left:clamp((wallW-d.width)/2,0,wallW)};onUpdateRoom({...room,elements:[...(room.elements||[]),o]},false);setSelectedId(o.id);setAddOpen(false)};
   const pinch=Gesture.Pinch().runOnJS(true).onBegin(()=>pinchStart.current=zoom).onUpdate(e=>setZoom(clamp(pinchStart.current*e.scale,.8,3.4)));const pan=Gesture.Pan().minPointers(2).runOnJS(true).onBegin(()=>panStart.current=offset).onUpdate(e=>setOffset({x:panStart.current.x+e.translationX,y:panStart.current.y+e.translationY}));const gesture=Gesture.Simultaneous(pinch,pan);
-  return <View style={styles.editorScreen}><View style={styles.editorTop}><Pressable onPress={onBack}><Text style={styles.back}>‹ Planta</Text></Pressable><View style={{flex:1,marginHorizontal:10}}><Text style={styles.editorTitle}>Parede {String.fromCharCode(65+wallIndex)}</Text><Text style={styles.editorSub}>{mFmt(wallW)} × {mFmt(wallH)} · {room.name}</Text></View><Pressable onPress={()=>onUpdateRoom(room,true)} style={styles.saveBtn}><Text style={styles.saveBtnText}>Salvar</Text></Pressable></View><View style={styles.toolBar}><Text style={styles.toolLabel}>Arraste para pré-posicionar · toque para editar com precisão</Text><Text style={styles.zoomBadge}>{Math.round(zoom*100)}%</Text></View><GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:boardW,height:boardH}]}><View style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><View style={[styles.wallFace,{left:27,top:28,width:wallW*px,height:wallH*px}]}/><View pointerEvents="none" style={[styles.wallWidthCota,{left:27,top:4,width:wallW*px}]}><Text style={styles.wallCotaText}>{mFmt(wallW)}</Text></View><View pointerEvents="none" style={[styles.wallHeightCota,{left:31+wallW*px,top:28,height:wallH*px}]}><Text style={[styles.wallCotaText,{transform:[{rotate:'90deg'}]}]}>{mFmt(wallH)}</Text></View>{objects.map(o=><WallObject key={o.id} obj={o} wallW={wallW} wallH={wallH} boardW={boardW} boardH={boardH} px={px} selected={o.id===selectedId} onSelect={()=>setSelectedId(o.id)} onEdit={()=>{setSelectedId(o.id);setEditOpen(true)}} onChange={updateObj}/>)}</View></View></GestureDetector>{selected?<View style={styles.cotaBar}><Text style={styles.cotaText}>← {mFmt(isInternalWall(selected.type)?selected.left:Math.max(0,selected.left-wallSegmentForElement(room,selected).start))}</Text><Text style={styles.cotaName}>{selected.type}</Text><Text style={styles.cotaText}>{mFmt(isInternalWall(selected.type)?Math.max(0,wallW-selected.left-selected.width):Math.max(0,wallSegmentForElement(room,selected).end-selected.left-selected.width))} →</Text><Text style={styles.cotaText}>↕ piso {mFmt(selected.bottom)}</Text></View>:<Text style={styles.selectHint}>Selecione um elemento para ver as cotas.</Text>}<View style={styles.elevActions}><Button secondary title="＋ Adicionar" onPress={()=>setAddOpen(true)}/>{selected?<Button title="Editar" onPress={()=>setEditOpen(true)}/>:null}</View><AddSheet visible={addOpen} allowedGroups={FRONT_GROUPS} excludedItems={FREE_PLAN_TYPES} initialGroup="Pontos" onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={wallIndex}/><ObjectModal visible={editOpen} object={selected} wallW={wallW} wallH={wallH} onClose={()=>setEditOpen(false)} onSave={updateObj} onDelete={()=>{if(!selected)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onUpdateRoom({...room,elements:(room.elements||[]).filter(e=>e.id!==selected.id)},false);setSelectedId(null);setEditOpen(false)});}}/></View>;
+  return <View style={styles.editorScreen}><View style={styles.editorTop}><Pressable onPress={onBack}><Text style={styles.back}>‹ Planta</Text></Pressable><View style={{flex:1,marginHorizontal:10}}><Text style={styles.editorTitle}>Parede {String.fromCharCode(65+wallIndex)}</Text><Text style={styles.editorSub}>{mFmt(wallW)} × {mFmt(wallH)} · {room.name}</Text></View><Pressable onPress={()=>onUpdateRoom(room,true)} style={styles.saveBtn}><Text style={styles.saveBtnText}>Salvar</Text></Pressable></View><View style={styles.toolBar}><Text style={styles.toolLabel}>Arraste para pré-posicionar · toque para editar com precisão</Text><Text style={styles.zoomBadge}>{Math.round(zoom*100)}%</Text></View><GestureDetector gesture={gesture}><View style={[styles.elevCanvas,{width:boardW,height:boardH}]}><View style={{flex:1,transform:[{translateX:offset.x},{translateY:offset.y},{scale:zoom}]}}><View style={[styles.wallFace,{left:27,top:28,width:wallW*px,height:wallH*px}]}/><View pointerEvents="none" style={[styles.wallWidthCota,{left:27,top:4,width:wallW*px}]}><Text style={styles.wallCotaText}>{mFmt(wallW)}</Text></View><View pointerEvents="none" style={[styles.wallHeightCota,{left:31+wallW*px,top:28,height:wallH*px}]}><Text style={[styles.wallCotaText,{transform:[{rotate:'90deg'}]}]}>{mFmt(wallH)}</Text></View>{objects.map(o=><WallObject key={o.id} obj={o} wallW={wallW} wallH={wallH} boardW={boardW} boardH={boardH} px={px} selected={o.id===selectedId} onSelect={()=>setSelectedId(o.id)} onEdit={()=>{setSelectedId(o.id);setEditOpen(true)}} onChange={updateObj}/>)}</View></View></GestureDetector>{selected?<View style={styles.cotaBar}><Text style={styles.cotaText}>← {mFmt(selected.left)}</Text><Text style={styles.cotaName}>{selected.type}</Text><Text style={styles.cotaText}>{mFmt(Math.max(0,wallW-selected.left-selected.width))} →</Text><Text style={styles.cotaText}>↕ piso {mFmt(selected.bottom)}</Text></View>:<Text style={styles.selectHint}>Selecione um elemento para ver as cotas.</Text>}<View style={styles.elevActions}><Button secondary title="＋ Adicionar" onPress={()=>setAddOpen(true)}/>{selected?<Button title="Editar" onPress={()=>setEditOpen(true)}/>:null}</View><AddSheet visible={addOpen} allowedGroups={FRONT_GROUPS} excludedItems={FREE_PLAN_TYPES} initialGroup="Pontos" onClose={()=>setAddOpen(false)} onAdd={addElement} wallIndex={wallIndex}/><ObjectModal visible={editOpen} object={selected} wallW={wallW} wallH={wallH} onClose={()=>setEditOpen(false)} onSave={updateObj} onDelete={()=>{if(!selected)return;confirmDelete('Excluir item','Remover este item da medição?',()=>{onUpdateRoom({...room,elements:(room.elements||[]).filter(e=>e.id!==selected.id)},false);setSelectedId(null);setEditOpen(false)});}}/></View>;
 }
 
 function ElementVisual({type,width,height}){
@@ -1049,25 +1050,30 @@ function ElementVisual({type,width,height}){
   if(type==='Porta') return svg(<><Defs><LinearGradient id="doorG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#D0A777"/><Stop offset="1" stopColor={wood}/></LinearGradient></Defs><Rect x="3" y="2" width="94" height="98" fill="#6D5137"/><Rect x="8" y="5" width="84" height="95" fill="url(#doorG)" stroke="#59422F" strokeWidth="2"/><Rect x="17" y="15" width="66" height="30" fill="none" stroke="#8C6845" strokeWidth="2"/><Rect x="17" y="54" width="66" height="34" fill="none" stroke="#8C6845" strokeWidth="2"/><Circle cx="80" cy="51" r="3" fill="#31363A"/></>);
   if(type==='Janela') return svg(<><Rect x="3" y="4" width="94" height="92" fill="#67747C"/><Rect x="9" y="10" width="82" height="80" fill={blueGlass} stroke="#4D606A" strokeWidth="2"/><Line x1="50" y1="10" x2="50" y2="90" stroke="#5D7079" strokeWidth="3"/><Line x1="9" y1="50" x2="91" y2="50" stroke="#6D8089" strokeWidth="2"/><Rect x="5" y="89" width="90" height="7" fill="#AEB7BC"/></>);
   if(type==='Passagem') return svg(<><Rect x="2" y="2" width="96" height="96" rx="3" fill="#101820"/><SvgText x="50" y="52" textAnchor="middle" fontSize="4" fontWeight="700" fill="#FFFFFF">PASSAGEM</SvgText></>);
+  if(type==='Bancada') return svg(<><Defs><LinearGradient id="counterG" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#F3F4F4"/><Stop offset="1" stopColor="#AEB6BA"/></LinearGradient></Defs><Rect x="2" y="43" width="96" height="14" rx="2" fill="url(#counterG)" stroke={line} strokeWidth="2"/><Line x1="5" y1="46" x2="95" y2="46" stroke="#FFFFFF" strokeWidth="2"/></>);
+  if(type==='Porta de correr') return svg(<><Rect x="3" y="3" width="94" height="94" fill="#D9E8EF" stroke="#52636D" strokeWidth="2"/><Rect x="7" y="7" width="52" height="86" fill="#EAF4F8" stroke="#667A85" strokeWidth="2"/><Rect x="41" y="7" width="52" height="86" fill="#C9E1EC" stroke="#667A85" strokeWidth="2"/><Line x1="52" y1="50" x2="82" y2="50" stroke="#52636D" strokeWidth="2"/><Path d="M 82 50 l -7 -5 M 82 50 l -7 5" stroke="#52636D" strokeWidth="2"/></>);
   if(type==='Pia') return svg(<><Defs><LinearGradient id="sinkFront" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#F3F4F4"/><Stop offset="1" stopColor="#B8C0C4"/></LinearGradient></Defs><Rect x="2" y="36" width="96" height="28" rx="2" fill="url(#sinkFront)" stroke={line} strokeWidth="2"/><Rect x="2" y="60" width="96" height="8" fill="#8E979C"/><Line x1="5" y1="39" x2="95" y2="39" stroke="#FFFFFF" strokeWidth="2" opacity=".8"/></>);
+  if(type==='Frigobar'||type==='Freezer') return svg(<><Rect x="5" y="4" width="90" height="92" rx="4" fill="#E7EBED" stroke="#59656C" strokeWidth="2"/><Line x1="8" y1="25" x2="92" y2="25" stroke="#89949A" strokeWidth="2"/><Line x1="78" y1="35" x2="78" y2="70" stroke="#66737A" strokeWidth="3"/></>);
   if(type==='Geladeira') return svg(<><Defs><LinearGradient id="fridgeG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#FAFBFC"/><Stop offset="1" stopColor="#C8CED2"/></LinearGradient></Defs><Rect x="5" y="2" width="90" height="96" rx="5" fill="url(#fridgeG)" stroke="#5A6268" strokeWidth="2"/><Line x1="5" y1="38" x2="95" y2="38" stroke="#7D868C" strokeWidth="2"/><Line x1="80" y1="11" x2="80" y2="31" stroke="#626B71" strokeWidth="3"/><Line x1="80" y1="47" x2="80" y2="70" stroke="#626B71" strokeWidth="3"/></>);
-  if(type==='Fogão') return svg(<><Rect x="4" y="3" width="92" height="94" rx="3" fill="#5C646A" stroke="#22282C" strokeWidth="2"/><Rect x="8" y="7" width="84" height="20" fill="#32383D"/>{[20,40,60,80].map(x=><Circle key={x} cx={x} cy="17" r="6" fill="#111719" stroke="#8D969A" strokeWidth="1"/>)}<Rect x="13" y="38" width="74" height="44" rx="3" fill="#20262A" stroke="#9AA1A5" strokeWidth="2"/><Rect x="20" y="45" width="60" height="28" fill="#56636B"/><Line x1="17" y1="31" x2="83" y2="31" stroke="#C1C6C8" strokeWidth="2"/></>);
+  if(type==='Fogão'||type==='Fogão/Cooktop') return svg(<><Rect x="4" y="3" width="92" height="94" rx="3" fill="#D9DEE1" stroke="#30383D" strokeWidth="3"/><Rect x="7" y="5" width="86" height="24" rx="2" fill="#343B40"/>{[[24,13],[50,13],[76,13],[37,23],[63,23]].map((p,i)=><Circle key={i} cx={p[0]} cy={p[1]} r={i<3?6:4.5} fill="#111719" stroke="#B5BDC1" strokeWidth="1.5"/>)}<Rect x="12" y="35" width="76" height="49" rx="4" fill="#20272B" stroke="#5D686E" strokeWidth="2"/><Rect x="18" y="42" width="64" height="34" rx="2" fill="#53636C" stroke="#9BA6AB" strokeWidth="1.5"/><Line x1="18" y1="32" x2="82" y2="32" stroke="#454E53" strokeWidth="4"/><Circle cx="20" cy="91" r="2.5" fill="#30383D"/><Circle cx="80" cy="91" r="2.5" fill="#30383D"/></>);
   if(type==='Cooktop') return svg(<><Rect x="2" y="25" width="96" height="50" rx="4" fill="#30363A" stroke="#161B1E" strokeWidth="2"/>{[[25,40],[50,40],[75,40],[25,62],[50,62],[75,62]].map((p,i)=><Circle key={i} cx={p[0]} cy={p[1]} r="7" fill="#111719" stroke="#A4AAAD" strokeWidth="1.5"/>)}</>);
   if(type==='Forno'||type==='Micro-ondas') return svg(<><Rect x="4" y="5" width="92" height="90" rx="3" fill="#4A5156" stroke="#23282C" strokeWidth="2"/><Rect x="13" y="24" width="65" height="52" fill="#1F2529" stroke="#899298" strokeWidth="2"/><Rect x="18" y="30" width="55" height="40" fill="#52616A"/><Circle cx="86" cy="27" r="4" fill="#C2C8CA"/><Circle cx="86" cy="42" r="4" fill="#C2C8CA"/></>);
   if(type==='Máquina de lavar') return svg(<><Rect x="4" y="3" width="92" height="94" rx="5" fill="#E9ECEE" stroke="#59656C" strokeWidth="2"/><Rect x="10" y="9" width="80" height="15" fill="#D4D9DC"/><Circle cx="50" cy="60" r="27" fill="#9EB5C0" stroke="#5B6A72" strokeWidth="3"/><Circle cx="50" cy="60" r="19" fill="#C6DBE3" stroke="#7A8C94" strokeWidth="2"/></>);
   if(type==='Lava-louças') return svg(<><Rect x="4" y="3" width="92" height="94" rx="3" fill="#E8EBED" stroke="#5B656B" strokeWidth="2"/><Rect x="9" y="9" width="82" height="12" fill="#C9D0D4"/><Line x1="14" y1="29" x2="86" y2="29" stroke="#7B858B" strokeWidth="2"/><Rect x="15" y="39" width="70" height="45" fill="#D7DCDF" stroke="#879096" strokeWidth="1"/></>);
   if(type==='Tanque') return svg(<><Rect x="4" y="22" width="92" height="60" fill="#D7DBDC" stroke="#626D72" strokeWidth="2"/><Path d="M 15 32 Q 50 20 85 32 L 79 67 Q 50 77 21 67 Z" fill="#EDF0F1" stroke="#707A7F" strokeWidth="2"/><Path d="M 51 22 L 51 10 Q 51 5 61 5 L 68 5" fill="none" stroke="#5C676C" strokeWidth="4"/></>);
+  if(type==='Depurador') return svg(<><Rect x="7" y="38" width="86" height="25" rx="3" fill="#BFC6CA" stroke="#5F696F" strokeWidth="2"/><Rect x="18" y="63" width="64" height="8" fill="#8F999E"/><Circle cx="77" cy="50" r="3" fill="#50595E"/><Circle cx="85" cy="50" r="3" fill="#50595E"/></>);
   if(type==='Coifa') return svg(<><Path d="M 16 70 L 30 30 L 70 30 L 84 70 Z" fill="#C9CED1" stroke="#616A70" strokeWidth="2"/><Rect x="42" y="2" width="16" height="30" fill="#AEB5B9" stroke="#626B70" strokeWidth="2"/><Rect x="10" y="70" width="80" height="12" fill="#90989C"/></>);
   if(type==='Cama solteiro'||type==='Cama casal') return svg(<><Rect x="4" y="32" width="92" height="48" rx="5" fill="#E8E2D8" stroke="#756B61" strokeWidth="2"/><Rect x="7" y="21" width="86" height="16" rx="4" fill="#C9BAA7" stroke="#756B61" strokeWidth="2"/><Rect x="18" y="38" width="28" height="13" rx="5" fill="#FAF8F4" stroke="#A89C8D"/><Rect x="54" y="38" width="28" height="13" rx="5" fill="#FAF8F4" stroke="#A89C8D"/></>);
   if(type==='Beliche') return svg(<><Rect x="8" y="12" width="84" height="28" rx="3" fill="#E8E2D8" stroke="#756B61" strokeWidth="3"/><Rect x="8" y="62" width="84" height="28" rx="3" fill="#E8E2D8" stroke="#756B61" strokeWidth="3"/><Line x1="14" y1="8" x2="14" y2="96" stroke="#675B50" strokeWidth="4"/><Line x1="86" y1="8" x2="86" y2="96" stroke="#675B50" strokeWidth="4"/><Line x1="72" y1="42" x2="72" y2="60" stroke="#675B50" strokeWidth="3"/></>);
   if(type==='Televisão') return svg(<><Rect x="4" y="10" width="92" height="68" rx="4" fill="#25313A" stroke="#111820" strokeWidth="3"/><Rect x="9" y="15" width="82" height="58" fill="#607887"/><Line x1="50" y1="78" x2="50" y2="90" stroke="#303940" strokeWidth="4"/><Line x1="36" y1="90" x2="64" y2="90" stroke="#303940" strokeWidth="4"/></>);
   if(type==='Mesa') return svg(<><Rect x="8" y="18" width="84" height="36" rx="4" fill="#CEB38F" stroke="#725B43" strokeWidth="3"/><Line x1="18" y1="54" x2="13" y2="94" stroke="#725B43" strokeWidth="5"/><Line x1="82" y1="54" x2="87" y2="94" stroke="#725B43" strokeWidth="5"/></>);
-  if(type==='Tomada') return svg(<><Rect x="13" y="18" width="74" height="64" rx="13" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Circle cx="36" cy="48" r="6" fill="#46515A"/><Circle cx="64" cy="48" r="6" fill="#46515A"/><Path d="M 50 58 L 43 70 L 57 70 Z" fill="#46515A"/></>);
-  if(type==='Interruptor') return svg(<><Rect x="17" y="12" width="66" height="76" rx="10" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Rect x="31" y="24" width="38" height="52" rx="7" fill="#E8EDF0" stroke="#6A757D" strokeWidth="3"/><Line x1="34" y1="50" x2="66" y2="50" stroke="#6A757D" strokeWidth="3"/></>);
-  if(type==='Água') return svg(<><Circle cx="50" cy="55" r="22" fill="#E9F6FC" stroke="#39738C" strokeWidth="5"/><Path d="M 50 10 C 37 29 30 39 30 52 C 30 66 39 76 50 76 C 61 76 70 66 70 52 C 70 39 63 29 50 10 Z" fill="#BDE8F8" stroke="#39738C" strokeWidth="3"/></>);
-  if(type==='Esgoto') return svg(<><Circle cx="50" cy="50" r="32" fill="#F5F7F8" stroke="#4B565E" strokeWidth="5"/><Circle cx="50" cy="50" r="17" fill="none" stroke="#77828A" strokeWidth="4"/><Line x1="30" y1="50" x2="70" y2="50" stroke="#77828A" strokeWidth="3"/><Line x1="50" y1="30" x2="50" y2="70" stroke="#77828A" strokeWidth="3"/></>);
+  if(type==='Tomada') return svg(<><Rect x="8" y="24" width="84" height="52" rx="5" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Circle cx="37" cy="48" r="5" fill="#46515A"/><Circle cx="63" cy="48" r="5" fill="#46515A"/><Path d="M 50 57 L 44 68 L 56 68 Z" fill="#46515A"/></>);
+  if(type==='Interruptor') return svg(<><Rect x="18" y="12" width="64" height="76" rx="5" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Rect x="31" y="25" width="38" height="50" rx="3" fill="#E8EDF0" stroke="#6A757D" strokeWidth="3"/><Line x1="34" y1="50" x2="66" y2="50" stroke="#6A757D" strokeWidth="3"/></>);
+  if(type==='Água') return svg(<Circle cx="50" cy="50" r="28" fill="#299FD6"/>);
+  if(type==='Esgoto') return svg(<Circle cx="50" cy="50" r="29" fill="#20262D"/>);
   if(type==='Gás') return svg(<><Circle cx="50" cy="50" r="31" fill="#FFF8E7" stroke="#75602D" strokeWidth="5"/><Path d="M 52 18 C 65 34 69 42 66 55 C 63 68 55 77 43 76 C 31 75 25 66 27 55 C 29 44 39 39 42 29 C 44 23 43 18 43 18 C 47 20 50 23 52 27 C 54 24 54 21 52 18 Z" fill="#E6C15D" stroke="#75602D" strokeWidth="2"/></>);
   if(type==='TV/Dados') return svg(<><Rect x="12" y="20" width="76" height="60" rx="9" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Rect x="27" y="34" width="46" height="28" rx="3" fill="#DDE6EB" stroke="#6C7880" strokeWidth="3"/><Line x1="42" y1="70" x2="58" y2="70" stroke="#46515A" strokeWidth="4"/></>);
+  if(isReservedSpace(type)) return svg(<><Rect x="5" y="5" width="90" height="90" rx="2" fill="rgba(255,255,255,.25)" stroke="#778691" strokeWidth="3" strokeDasharray="8 6"/><SvgText x="50" y="54" textAnchor="middle" fontSize="9" fontWeight="800" fill="#6B7882">VÃO</SvgText></>);
   if(isPoint(type)) return svg(<><Circle cx="50" cy="50" r="32" fill="#FBFCFD" stroke="#515C64" strokeWidth="5"/><Circle cx="50" cy="50" r="7" fill="#515C64"/></>);
   if(isStructure(type)) return svg(<><Defs><LinearGradient id="structG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#D5DADD"/><Stop offset="1" stopColor="#9FA8AE"/></LinearGradient></Defs><Rect x="4" y="3" width="92" height="94" fill="url(#structG)" stroke="#626B71" strokeWidth="2"/>{[18,35,52,69,86].map(y=><Line key={y} x1="8" y1={y} x2="92" y2={y-10} stroke="#B8C0C4" strokeWidth="1"/>)}</>);
   return svg(<><Rect x="4" y="4" width="92" height="92" fill={light} stroke={line} strokeWidth="2"/><Line x1="12" y1="50" x2="88" y2="50" stroke="#A7B0B5" strokeWidth="2"/></>);
@@ -1076,8 +1082,10 @@ function ElementVisual({type,width,height}){
 function WallObject({obj,wallW,wallH,boardW,boardH,px,selected,onSelect,onEdit,onChange,pinchingRef}){
   const opening=isOpening(obj.type), equip=isEquipment(obj.type), structure=isStructure(obj.type), reserved=isReservedSpace(obj.type), point=isPoint(obj.type), finish=groupOf(obj.type)==='Acabamentos';
   const naturalW=Math.max(3,obj.width*px), naturalH=Math.max(3,obj.height*px);
-  const vw=point?26:Math.max(naturalW,opening?26:equip?18:structure?10:finish?8:16);
-  const vh=point?26:obj.type==='Rodapé'?Math.max(naturalH,6):obj.type==='Sanca'?Math.max(naturalH,7):obj.type==='Pia'?Math.max(naturalH,9):obj.type==='Cooktop'?Math.max(naturalH,6):Math.max(naturalH,opening?26:equip?18:structure?10:10);
+  const pointW=obj.type==='Tomada'?18:obj.type==='Interruptor'?16:obj.type==='Água'||obj.type==='Esgoto'?14:18;
+  const vw=point?pointW:Math.max(naturalW,opening?26:equip?18:structure?10:finish?8:16);
+  const pointH=obj.type==='Tomada'?13:obj.type==='Interruptor'?19:obj.type==='Água'||obj.type==='Esgoto'?14:18;
+  const vh=point?pointH:obj.type==='Rodapé'?Math.max(naturalH,6):obj.type==='Sanca'?Math.max(naturalH,7):obj.type==='Pia'?Math.max(naturalH,9):obj.type==='Cooktop'?Math.max(naturalH,6):Math.max(naturalH,opening?26:equip?18:structure?10:10);
   const x=27+obj.left*px,y=46+(wallH-obj.bottom-obj.height)*px;const start=useRef({left:obj.left,bottom:obj.bottom});
   const pan=Gesture.Pan().minDistance(7).activateAfterLongPress(70).maxPointers(1).runOnJS(true).onBegin(()=>{start.current={left:obj.left,bottom:obj.bottom};}).onUpdate(e=>{if(pinchingRef?.current)return;onChange({...obj,left:clamp(start.current.left+e.translationX/px,0,Math.max(0,wallW-obj.width)),bottom:clamp(start.current.bottom-e.translationY/px,0,Math.max(0,wallH-obj.height))})});
   const tap=Gesture.Tap().maxDistance(8).runOnJS(true).onEnd((_e,ok)=>{if(ok)onSelect()});
@@ -1351,7 +1359,7 @@ export default function App(){
   };
   const deleteProject=id=>confirmDelete('Excluir projeto','Excluir este projeto e todos os ambientes?',async()=>{await persist(projects.filter(p=>p.id!==id));if(activeProjectId===id){setActiveProjectId(null);setActiveRoomId(null);setScreen('home')}});
   const deleteRoom=id=>confirmDelete('Excluir ambiente','Excluir este ambiente e todas as medidas dele?',async()=>{const next=projects.map(p=>p.id!==activeProjectId?p:{...p,updatedAt:Date.now(),rooms:p.rooms.filter(r=>r.id!==id)});await persist(next);if(activeRoomId===id)setActiveRoomId(null)});
-  const begin=async meta=>{const count=clamp(Number(meta?.suggestedWallCount||4),1,4);const r={id:uid(),name:meta.room,roomType:meta.roomType||'',wallCount:count,lengths:[3.20,2.80,3.20,2.80].slice(0,count),height:2.65,elements:[],photos:[],notes:'',createdAt:Date.now()};let pid=meta.projectId,next;if(pid){next=projects.map(p=>p.id===pid?{...p,updatedAt:Date.now(),rooms:[...(p.rooms||[]),r]}:p)}else{pid=uid();next=[...projects,{id:pid,client:meta.client,name:meta.project,rooms:[r],createdAt:Date.now(),updatedAt:Date.now()}]};await persist(next);setDraftMeta(meta);setActiveProjectId(pid);setActiveRoomId(r.id);setScreen('measure')};
+  const begin=meta=>{setDraftMeta(meta);setActiveProjectId(meta.projectId||null);setActiveRoomId(null);setScreen('measure')};
   const createRoom=async count=>{const r={id:uid(),name:draftMeta.room,wallCount:count,lengths:[3.20,2.80,3.20,2.80].slice(0,count),height:2.65,elements:[],photos:[],notes:'',createdAt:Date.now()};let pid=draftMeta.projectId,next;if(pid){next=projects.map(p=>p.id===pid?{...p,updatedAt:Date.now(),rooms:[...p.rooms,r]}:p)}else{pid=uid();next=[...projects,{id:pid,client:draftMeta.client,name:draftMeta.project,rooms:[r],createdAt:Date.now(),updatedAt:Date.now()}]};await persist(next);setActiveProjectId(pid);setActiveRoomId(r.id);setScreen('measure')};
   const newRoomForProject=p=>{setActiveRoomId(null);setDraftMeta({client:p.client,project:p.name,room:'',projectId:p.id});setScreen('newRoomName')};
   const sendCurrentToGw=async()=>{
@@ -1452,7 +1460,7 @@ homeList:{paddingHorizontal:14,paddingTop:12,paddingBottom:18,gap:8},homeFooter:
   techTypeBadge:{minWidth:52,height:38,paddingHorizontal:8,borderRadius:8,borderWidth:1,borderColor:'#C7D0D9',backgroundColor:'#F7F9FA',alignItems:'center',justifyContent:'center'},
   techTypeBadgeText:{fontSize:9,fontWeight:'800',color:'#334155',textTransform:'uppercase'},
   objStructure:{backgroundColor:'rgba(217,224,229,.86)',borderColor:'#65727E',borderRadius:1},
-  objPoint:{backgroundColor:WHITE,borderColor:'#6B7785',borderRadius:20},
+  objPoint:{backgroundColor:'transparent',borderColor:'transparent',borderWidth:0,borderRadius:0},
   techDimLine:{position:'absolute',bottom:7,height:13,borderTopWidth:1,borderTopColor:TECH.dim,flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start'},
   techDimTick:{width:1,height:7,backgroundColor:TECH.dim,marginTop:-3},
   techDimText:{position:'absolute',top:-8,alignSelf:'center',fontSize:7.5,fontWeight:'700',color:TECH.dim,backgroundColor:'rgba(255,255,255,.96)',paddingHorizontal:3},

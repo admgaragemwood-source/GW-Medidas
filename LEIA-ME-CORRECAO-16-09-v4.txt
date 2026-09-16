@@ -1,0 +1,8 @@
+GW MEDIDAS — CORREÇÃO 16/09 v4
+
+Correções desta rodada:
+- Pontos: removido o contorno externo do container visual. Tomada e interruptor ficam apenas retangulares; Água e Esgoto ficam como um único círculo.
+- Planta baixa: cotas de cada parede ficam somente no lado externo correspondente (A em cima, C embaixo, B à direita, D à esquerda). As linhas auxiliares não atravessam mais o ambiente inteiro.
+- Grade da planta: alterada para azul técnico claro para diferenciar das linhas de cota.
+
+Substituir somente na pasta GW-Medidas.
