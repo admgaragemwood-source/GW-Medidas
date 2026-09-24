@@ -459,8 +459,7 @@ function PlanTechnicalLayer({walls,room,selected,selectedElement,canvasFree,onCh
         <Line x1={b.x-ny*4} y1={b.y+nx*4} x2={b.x+ny*4} y2={b.y-nx*4} stroke={dim} strokeWidth="1.1"/>
         <Rect x={tx-25} y={ty-8} width="50" height="16" rx="5" fill="#FFFFFF" stroke={active?'#B8D4FF':'#E2E8EE'} strokeWidth=".6"/>
         <SvgText x={tx} y={ty+3} fontSize="9.5" fontWeight="800" fill={dim} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${tx} ${ty})`} onPress={()=>{if(onChooseWall)onChooseWall(i);if(onEditWall)onEditWall(i)}}>{numFmt(w.length)} m</SvgText>
-        <Rect x={insideX-22} y={insideY-7} width="44" height="14" rx="4" fill="rgba(255,255,255,.86)"/>
-        <SvgText x={insideX} y={insideY+3} fontSize="7.8" fontWeight="800" fill={active?BLUE:'#657483'} textAnchor="middle">Parede {String.fromCharCode(65+i)}</SvgText>
+        <SvgText x={insideX} y={insideY+3} fontSize="7.8" fontWeight="800" fill={active?BLUE:'#657483'} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${insideX} ${insideY})`}>Parede {String.fromCharCode(65+i)}</SvgText>
         {wallLength>0&&relevant.length?vals.slice(0,-1).map((v,j)=>{
           const v2=vals[j+1],seg=v2-v;if(seg<.08)return null;
           const p1={x:w.a.x+ux*(v/wallLength)*L,y:w.a.y+uy*(v/wallLength)*L};
