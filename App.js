@@ -1248,17 +1248,26 @@ const exportWebPdf=async(html,fileName)=>{
   const parsed=new DOMParser().parseFromString(html,'text/html');
   const host=document.createElement('div');
   host.style.position='fixed';host.style.left='-12000px';host.style.top='0';host.style.width='760px';host.style.background='#fff';host.style.zIndex='-1';
-  const style=document.createElement('style');style.textContent=parsed.head.querySelector('style')?.textContent||'';host.appendChild(style);
-  const body=document.createElement('div');body.innerHTML=parsed.body.innerHTML;host.appendChild(body);document.body.appendChild(host);
+  const style=document.createElement('style');style.textContent=(parsed.head.querySelector('style')?.textContent||'')+`\n.gw-pdf-page{width:760px!important;height:1108px!important;min-height:1108px!important;max-height:1108px!important;margin:0!important;padding:38px 34px!important;overflow:hidden!important;page-break-after:auto!important;}`;host.appendChild(style);
+  document.body.appendChild(host);
   try{
+    const sourcePages=[...parsed.body.querySelectorAll('.page')];
+    if(!sourcePages.length)throw new Error('Nenhuma página para exportar');
     const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
-    await doc.html(body,{margin:[10,10,10,10],autoPaging:'text',width:190,windowWidth:760,html2canvas:{scale:.72,useCORS:true,backgroundColor:'#ffffff'}});
+    for(let i=0;i<sourcePages.length;i++){
+      if(i)doc.addPage('a4','portrait');
+      const wrap=document.createElement('div');
+      wrap.className='gw-pdf-page';
+      wrap.innerHTML=sourcePages[i].innerHTML;
+      host.appendChild(wrap);
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      await doc.html(wrap,{x:5,y:5,width:200,windowWidth:760,autoPaging:false,html2canvas:{scale:1,useCORS:true,backgroundColor:'#ffffff',logging:false},callback:()=>{}});
+      wrap.remove();
+    }
     const blob=doc.output('blob'), file=new File([blob],fileName,{type:'application/pdf'});
     if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
       await navigator.share({files:[file],title:'GW Medidas',text:'Medição exportada pelo GW Medidas'});
-    }else{
-      doc.save(fileName);
-    }
+    }else doc.save(fileName);
   }finally{host.remove();}
 };
 
