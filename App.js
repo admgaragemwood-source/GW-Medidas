@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.13 — compatibilidade reforçada com carrossel do GW Assistente
+// GW Medidas 6.6.14 — envia planta e paredes como vistas técnicas ao GW Assistente
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1676,6 +1676,22 @@ export default function App(){
     if(!base64)throw new Error('A captura visual ficou vazia.');
     return {image:`data:image/jpeg;base64,${base64}`,width:0,height:0};
   };
+  const captureGwTechnicalViews=async(payload)=>{
+    if(Platform.OS!=='web'||typeof document==='undefined')return [];
+    const rooms=payload?.rooms||[];
+    const out=[];
+    for(let ri=0;ri<rooms.length;ri++){
+      const room=rooms[ri];
+      const plan=await svgMarkupToPngDataUrl(reportPlanSvg(room),1400);
+      if(plan)out.push({id:`${room.id||ri}-plan`,kind:'plan',roomId:room.id,roomName:room.name,title:rooms.length>1?`${room.name} · Planta`:'Planta',image:plan});
+      const wallCount=Math.max(1,Number(room.wallCount||room.lengths?.length||1));
+      for(let wi=0;wi<wallCount;wi++){
+        const front=await svgMarkupToPngDataUrl(reportFrontSvg(room,wi),1400);
+        if(front)out.push({id:`${room.id||ri}-wall-${wi}`,kind:'front',roomId:room.id,roomName:room.name,wallIndex:wi,title:rooms.length>1?`${room.name} · Parede ${String.fromCharCode(65+wi)}`:`Parede ${String.fromCharCode(65+wi)}`,image:front});
+      }
+    }
+    return out;
+  };
   const captureProjectExportPages=async(payload)=>{
     if(Platform.OS!=='web')return [];
     const rooms=payload?.rooms||[],wallsByRoom=payload?.wallsByRoom||{};
@@ -1719,9 +1735,9 @@ export default function App(){
     setGwExporting(true);
     try{
       await new Promise(resolve=>setTimeout(resolve,160));
-      const pages=await captureProjectExportPages(payload);
-      const visual=pages.length?{image:pages[0].image,width:pages[0].width,height:pages[0].height}:await captureProjectExportVisual(payload);
-      const result=await gwSendExportSnapshot(project,{image:visual.image,width:visual.width,height:visual.height,pages,pageCount:pages.length||1,pageLayout:pages.map(p=>p.title),rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
+      const technicalViews=await captureGwTechnicalViews(payload);
+      const visual=technicalViews.length?{image:technicalViews[0].image,width:1400,height:975}:await captureProjectExportVisual(payload);
+      const result=await gwSendExportSnapshot(project,{image:visual.image,width:visual.width,height:visual.height,pages:technicalViews,technicalViews,pageCount:technicalViews.length||1,pageLayout:technicalViews.map(p=>p.title),viewMode:'technical-carousel',rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
       if(!result?.verified)throw new Error('O GW Assistente não confirmou o recebimento do arquivo.');
       const sentAtMs=Date.now();
       const next=projects.map(p=>p.id===project.id?{...p,gwExportLastSentAt:result.createdAt,gwExportLastSentAtMs:sentAtMs,updatedAt:sentAtMs}:p);
