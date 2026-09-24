@@ -363,7 +363,6 @@ function PlanWallDimensions({walls,activeIndex,selectedElement,onChooseWall,onEd
         <Line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={dim} strokeWidth={active?1.5:1.05}/>
         <Line x1={a.x-ny*4} y1={a.y+nx*4} x2={a.x+ny*4} y2={a.y-nx*4} stroke={dim} strokeWidth="1.1"/>
         <Line x1={b.x-ny*4} y1={b.y+nx*4} x2={b.x+ny*4} y2={b.y-nx*4} stroke={dim} strokeWidth="1.1"/>
-        <Rect x={tx-25} y={ty-8} width="50" height="16" rx="5" fill="#FFFFFF" stroke={active?'#B8D4FF':'#E2E8EE'} strokeWidth=".6"/>
         <SvgText x={tx} y={ty+3} fontSize="9.5" fontWeight="800" fill={dim} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${tx} ${ty})`} onPress={()=>{if(onChooseWall)onChooseWall(i);if(onEditWall)onEditWall(i)}}>{numFmt(w.length)} m</SvgText>
         <SvgText x={insideX} y={insideY+3} fontSize="7.8" fontWeight="800" fill={active?BLUE:'#657483'} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${insideX} ${insideY})`}>Parede {String.fromCharCode(65+i)}</SvgText>
       </React.Fragment>
