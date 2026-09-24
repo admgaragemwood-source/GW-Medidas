@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.12 — envia páginas separadas ao GW Assistente
+// GW Medidas 6.6.13 — compatibilidade reforçada com carrossel do GW Assistente
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
