@@ -439,12 +439,21 @@ export async function gwSendExportSnapshot(project = {}, snapshot = {}) {
   // Recriamos o pacote técnico a partir da medição local atual para que o GW Assistente
   // atualize o horário exibido e não permaneça preso ao syncedAt do envio anterior.
   const latestMeasurement = buildGwMeasurementPayload(project);
+  const technicalViews = Array.isArray(snapshot.technicalViews)
+    ? snapshot.technicalViews
+    : (Array.isArray(snapshot.pages) ? snapshot.pages : []);
+
   const exportarOriginal = {
     format: 'image/jpeg',
     image: snapshot.image,
     width: Number(snapshot.width || 0),
     height: Number(snapshot.height || 0),
     rooms: Array.isArray(snapshot.rooms) ? snapshot.rooms : [],
+    technicalViews,
+    pages: technicalViews,
+    pageCount: technicalViews.length || Number(snapshot.pageCount || 1),
+    pageLayout: Array.isArray(snapshot.pageLayout) ? snapshot.pageLayout : technicalViews.map(v => v?.title || ''),
+    viewMode: snapshot.viewMode || 'technical-carousel',
     createdAt,
     source: 'GW Medidas · Exportar projeto',
   };
