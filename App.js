@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.11 — vista frontal exportada com elementos técnicos detalhados
+// GW Medidas 6.6.12 — envia páginas separadas ao GW Assistente
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1676,6 +1676,40 @@ export default function App(){
     if(!base64)throw new Error('A captura visual ficou vazia.');
     return {image:`data:image/jpeg;base64,${base64}`,width:0,height:0};
   };
+  const captureProjectExportPages=async(payload)=>{
+    if(Platform.OS!=='web')return [];
+    const rooms=payload?.rooms||[],wallsByRoom=payload?.wallsByRoom||{};
+    if(!rooms.length||typeof document==='undefined')return [];
+    const html=await projectFourPagePdfHtml(project,rooms,wallsByRoom);
+    const parsed=new DOMParser().parseFromString(html,'text/html');
+    const html2canvas=(await import('html2canvas')).default;
+    const host=document.createElement('div');
+    host.style.position='fixed';host.style.left='-10000px';host.style.top='0';
+    host.style.width='794px';host.style.background='#fff';host.style.pointerEvents='none';
+    const style=document.createElement('style');
+    style.textContent=(parsed.head.querySelector('style')?.textContent||'')+`
+      .gw-send-page{box-sizing:border-box!important;width:794px!important;height:1123px!important;
+      min-width:794px!important;max-width:794px!important;min-height:1123px!important;max-height:1123px!important;
+      margin:0!important;padding:42px 38px!important;overflow:hidden!important;background:#fff!important}
+      .gw-send-page .visual{width:100%!important;max-width:100%!important;overflow:hidden!important}
+      .gw-send-page .visual img{display:block!important;width:auto!important;height:auto!important;
+      max-width:100%!important;max-height:100%!important;object-fit:contain!important;margin:auto!important}`;
+    host.appendChild(style);document.body.appendChild(host);
+    try{
+      const source=[...parsed.body.querySelectorAll('.page')],out=[];
+      for(let i=0;i<source.length;i++){
+        const page=document.createElement('section');page.className='page gw-send-page';page.innerHTML=source[i].innerHTML;host.appendChild(page);
+        const imgs=[...page.querySelectorAll('img')];
+        await Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;setTimeout(resolve,1800)})));
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const canvas=await html2canvas(page,{scale:1,useCORS:true,allowTaint:false,backgroundColor:'#ffffff',logging:false,width:794,height:1123,windowWidth:794,windowHeight:1123,scrollX:0,scrollY:0});
+        const title=page.querySelector('.top h1')?.textContent?.trim()||`Página ${i+1}`;
+        out.push({id:`page-${i+1}`,title,image:canvas.toDataURL('image/jpeg',.86),width:794,height:1123});
+        host.removeChild(page);
+      }
+      return out;
+    }finally{host.remove()}
+  };
   const visualPdfHtml=(project,image)=>`<!doctype html><html><head><meta charset=\"utf-8\"><style>@page{size:A4;margin:8mm}body{margin:0;font-family:Arial,sans-serif;background:#fff}.head{font-size:18px;font-weight:700;margin:0 0 8px}.sub{font-size:11px;color:#64748b;margin-bottom:10px}img{display:block;width:100%;height:auto}</style></head><body><div class=\"head\">GW Medidas · ${String(project?.name||'Projeto')}</div><div class=\"sub\">${String(project?.client||'')}</div><img src=\"${image}\" /></body></html>`;
   const finalizeProjectExport=async(payload)=>{const rooms=Array.isArray(payload)?payload:payload?.rooms,wallsByRoom=Array.isArray(payload)?{}:(payload?.wallsByRoom||{});if(!project||!rooms?.length)return;try{const fileName=`GW-Medidas-${safeFileName(project.client)}-${safeFileName(project.name)}.pdf`;if(Platform.OS==='web'){const html=await projectFourPagePdfHtml(project,rooms,wallsByRoom);await exportWebPdf(html,fileName);return;}let html;try{const visual=await captureProjectExportVisual(payload);html=visualPdfHtml(project,visual.image);}catch(captureError){console.warn('visual export fallback',captureError);html=projectPdfHtml(project,rooms,wallsByRoom);}const {uri}=await Print.printToFileAsync({html});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:`Exportar ${project.name}`});else Alert.alert('Arquivo criado','O PDF do projeto foi gerado com sucesso.');}catch(e){console.warn(e);Alert.alert('Exportar','Não foi possível gerar o projeto agora.')}};
   const [gwExporting,setGwExporting]=useState(false);
@@ -1685,8 +1719,9 @@ export default function App(){
     setGwExporting(true);
     try{
       await new Promise(resolve=>setTimeout(resolve,160));
-      const visual=await captureProjectExportVisual(payload);
-      const result=await gwSendExportSnapshot(project,{image:visual.image,width:visual.width,height:visual.height,pageCount:4,pageLayout:['planta','vista-frontal','ficha-tecnica','fotos-notas'],rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
+      const pages=await captureProjectExportPages(payload);
+      const visual=pages.length?{image:pages[0].image,width:pages[0].width,height:pages[0].height}:await captureProjectExportVisual(payload);
+      const result=await gwSendExportSnapshot(project,{image:visual.image,width:visual.width,height:visual.height,pages,pageCount:pages.length||1,pageLayout:pages.map(p=>p.title),rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
       if(!result?.verified)throw new Error('O GW Assistente não confirmou o recebimento do arquivo.');
       const sentAtMs=Date.now();
       const next=projects.map(p=>p.id===project.id?{...p,gwExportLastSentAt:result.createdAt,gwExportLastSentAtMs:sentAtMs,updatedAt:sentAtMs}:p);
