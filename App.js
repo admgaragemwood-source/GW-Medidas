@@ -1245,32 +1245,108 @@ const projectFourPagePdfHtml=async(project,rooms,wallsByRoom={})=>{
 
 const exportWebPdf=async(html,fileName)=>{
   const {jsPDF}=await import('jspdf');
+  const html2canvas=(await import('html2canvas')).default;
   const parsed=new DOMParser().parseFromString(html,'text/html');
   const host=document.createElement('div');
-  host.style.position='fixed';host.style.left='-12000px';host.style.top='0';host.style.width='760px';host.style.background='#fff';host.style.zIndex='-1';
-  const style=document.createElement('style');style.textContent=(parsed.head.querySelector('style')?.textContent||'')+`\n.gw-pdf-page{width:760px!important;height:1108px!important;min-height:1108px!important;max-height:1108px!important;margin:0!important;padding:38px 34px!important;overflow:hidden!important;page-break-after:auto!important;}`;host.appendChild(style);
+  host.style.position='fixed';
+  host.style.left='-10000px';
+  host.style.top='0';
+  host.style.width='794px';
+  host.style.background='#fff';
+  host.style.zIndex='-1';
+  host.style.pointerEvents='none';
+
+  const style=document.createElement('style');
+  style.textContent=(parsed.head.querySelector('style')?.textContent||'')+`
+    .gw-pdf-page{
+      box-sizing:border-box!important;
+      width:794px!important;
+      height:1123px!important;
+      min-width:794px!important;
+      max-width:794px!important;
+      min-height:1123px!important;
+      max-height:1123px!important;
+      margin:0!important;
+      padding:42px 38px!important;
+      overflow:hidden!important;
+      page-break-after:auto!important;
+      break-after:auto!important;
+      background:#fff!important;
+    }
+    .gw-pdf-page .visual{
+      width:100%!important;
+      max-width:100%!important;
+      overflow:hidden!important;
+    }
+    .gw-pdf-page .visual img{
+      display:block!important;
+      width:auto!important;
+      height:auto!important;
+      max-width:100%!important;
+      max-height:100%!important;
+      object-fit:contain!important;
+      margin:auto!important;
+    }
+  `;
+  host.appendChild(style);
   document.body.appendChild(host);
+
   try{
     const sourcePages=[...parsed.body.querySelectorAll('.page')];
     if(!sourcePages.length)throw new Error('Nenhuma página para exportar');
+
     const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+
     for(let i=0;i<sourcePages.length;i++){
       if(i)doc.addPage('a4','portrait');
-      const wrap=document.createElement('div');
-      wrap.className='gw-pdf-page';
-      wrap.innerHTML=sourcePages[i].innerHTML;
-      host.appendChild(wrap);
+
+      const page=document.createElement('section');
+      page.className='page gw-pdf-page';
+      page.innerHTML=sourcePages[i].innerHTML;
+      host.appendChild(page);
+
+      const imgs=[...page.querySelectorAll('img')];
+      await Promise.all(imgs.map(img=>img.complete
+        ? Promise.resolve()
+        : new Promise(resolve=>{
+            img.onload=resolve;
+            img.onerror=resolve;
+            setTimeout(resolve,2500);
+          })
+      ));
+
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      await doc.html(wrap,{x:5,y:5,width:200,windowWidth:760,autoPaging:false,html2canvas:{scale:1,useCORS:true,backgroundColor:'#ffffff',logging:false},callback:()=>{}});
-      wrap.remove();
+
+      const canvas=await html2canvas(page,{
+        scale:1.5,
+        useCORS:true,
+        allowTaint:false,
+        backgroundColor:'#ffffff',
+        logging:false,
+        width:794,
+        height:1123,
+        windowWidth:794,
+        windowHeight:1123,
+        scrollX:0,
+        scrollY:0
+      });
+
+      const imgData=canvas.toDataURL('image/jpeg',0.96);
+      doc.addImage(imgData,'JPEG',0,0,210,297,undefined,'FAST');
+      page.remove();
     }
-    const blob=doc.output('blob'), file=new File([blob],fileName,{type:'application/pdf'});
+
+    const blob=doc.output('blob');
+    const file=new File([blob],fileName,{type:'application/pdf'});
     if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
       await navigator.share({files:[file],title:'GW Medidas',text:'Medição exportada pelo GW Medidas'});
-    }else doc.save(fileName);
-  }finally{host.remove();}
+    }else{
+      doc.save(fileName);
+    }
+  }finally{
+    host.remove();
+  }
 };
-
 
 function ClientsScreen({projects,quickJobs=[],onBack}){
   const clients=useMemo(()=>{const m=new Map();projects.forEach(p=>{const k=(p.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0};if(p.gwSourceType==='orcamento')cur.budgets+=1;else if(p.gwSourceType==='projeto')cur.projects+=1;else cur.local+=1;cur.rooms+=(p.rooms||[]).length;m.set(k,cur)});quickJobs.forEach(q=>{const k=(q.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0,quick:0};cur.quick=(cur.quick||0)+1;m.set(k,cur)});return [...m.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'))},[projects,quickJobs]);
