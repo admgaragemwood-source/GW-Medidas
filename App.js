@@ -981,7 +981,7 @@ function ProjectExportPreview({project,onBack,onExport,onExportGw,gwExporting}){
     </View>})}
     {!rooms.length?<View style={styles.exportCard}><Text style={styles.exportEmptyText}>Selecione pelo menos um ambiente.</Text></View>:null}
     </View>
-  </ScrollView><View style={styles.exportFooter}><View style={{flexDirection:'row',gap:8}}><Pressable disabled={!rooms.length} onPress={()=>onExport({rooms,wallsByRoom})} style={[styles.newMeasureBtn,!rooms.length&&{opacity:.4}]}><Text style={styles.newMeasureText}>Exportar arquivo</Text></Pressable><Pressable disabled={!rooms.length||gwExporting} onPress={()=>onExportGw?.({rooms,wallsByRoom,captureRef:exportCaptureRef})} style={[styles.newMeasureBtn,{backgroundColor:'#101820',flex:1},(!rooms.length||gwExporting)&&{opacity:.45}]}><Text style={styles.newMeasureText}>{gwExporting?'Enviando...':((project?.gwExportLastSentAtMs||0)>=(project?.updatedAt||0)&&project?.gwExportLastSentAtMs?'✓ Enviado ao GW':'GW Assistente')}</Text></Pressable></View></View></View>;
+  </ScrollView><View style={styles.exportFooter}><View style={{flexDirection:'row',gap:8}}><Pressable disabled={!rooms.length} onPress={()=>onExport({rooms,wallsByRoom,captureRef:exportCaptureRef})} style={[styles.newMeasureBtn,!rooms.length&&{opacity:.4}]}><Text style={styles.newMeasureText}>Exportar arquivo</Text></Pressable><Pressable disabled={!rooms.length||gwExporting} onPress={()=>onExportGw?.({rooms,wallsByRoom,captureRef:exportCaptureRef})} style={[styles.newMeasureBtn,{backgroundColor:'#101820',flex:1},(!rooms.length||gwExporting)&&{opacity:.45}]}><Text style={styles.newMeasureText}>{gwExporting?'Enviando...':((project?.gwExportLastSentAtMs||0)>=(project?.updatedAt||0)&&project?.gwExportLastSentAtMs?'✓ Enviado ao GW':'GW Assistente')}</Text></Pressable></View></View></View>;
 }
 
 function ObjectModal({ visible, object, wallW, wallH, onClose, onSave, onDelete }) {
@@ -1508,56 +1508,40 @@ export default function App(){
   const saveExit=async()=>{if(!room)return;await updateRoom(room,false);setScreen('project')};
   const finishRoom=async()=>{if(!room)return;await updateRoom(room,false);setScreen('project')};
   const finalizeExport=async(selection)=>{if(!project||!room)return;try{const html=pdfHtml(project,room,selection),fileName=`GW-Medidas-${safeFileName(project.client)}-${safeFileName(room.name)}.pdf`;if(Platform.OS==='web'){await exportWebPdf(html,fileName);return;}const {uri}=await Print.printToFileAsync({html});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:`Exportar ${room.name}`});else Alert.alert('Arquivo criado','O PDF foi gerado com sucesso.');}catch(e){console.warn(e);Alert.alert('Exportar','Não foi possível gerar o arquivo agora.')}};
-  const finalizeProjectExport=async(payload)=>{const rooms=Array.isArray(payload)?payload:payload?.rooms,wallsByRoom=Array.isArray(payload)?{}:(payload?.wallsByRoom||{});if(!project||!rooms?.length)return;try{const html=projectPdfHtml(project,rooms,wallsByRoom),fileName=`GW-Medidas-${safeFileName(project.client)}-${safeFileName(project.name)}.pdf`;if(Platform.OS==='web'){await exportWebPdf(html,fileName);return;}const {uri}=await Print.printToFileAsync({html});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:`Exportar ${project.name}`});else Alert.alert('Arquivo criado','O PDF do projeto foi gerado com sucesso.');}catch(e){console.warn(e);Alert.alert('Exportar','Não foi possível gerar o projeto agora.')}};
+  const captureProjectExportVisual=async(payload)=>{
+    let node=payload?.captureRef?.current;
+    if(Platform.OS==='web'){
+      if(typeof document!=='undefined'){const dom=document.querySelector('[data-gw-export-capture=\"project\"]');if(dom)node=dom;}
+      if(!node||typeof node.getBoundingClientRect!=='function')throw new Error('Não encontrei a pré-visualização do Exportar.');
+      const html2canvas=(await import('html2canvas')).default;
+      const canvas=await html2canvas(node,{scale:2,useCORS:true,allowTaint:false,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY});
+      return {image:canvas.toDataURL('image/jpeg',.9),width:canvas.width,height:canvas.height};
+    }
+    if(!node)throw new Error('Não encontrei a pré-visualização do Exportar.');
+    const {captureRef}=await import('react-native-view-shot');
+    const base64=await captureRef(node,{format:'jpg',quality:.9,result:'base64'});
+    if(!base64)throw new Error('A captura visual ficou vazia.');
+    return {image:`data:image/jpeg;base64,${base64}`,width:0,height:0};
+  };
+  const visualPdfHtml=(project,image)=>`<!doctype html><html><head><meta charset=\"utf-8\"><style>@page{size:A4;margin:8mm}body{margin:0;font-family:Arial,sans-serif;background:#fff}.head{font-size:18px;font-weight:700;margin:0 0 8px}.sub{font-size:11px;color:#64748b;margin-bottom:10px}img{display:block;width:100%;height:auto}</style></head><body><div class=\"head\">GW Medidas · ${String(project?.name||'Projeto')}</div><div class=\"sub\">${String(project?.client||'')}</div><img src=\"${image}\" /></body></html>`;
+  const finalizeProjectExport=async(payload)=>{const rooms=Array.isArray(payload)?payload:payload?.rooms,wallsByRoom=Array.isArray(payload)?{}:(payload?.wallsByRoom||{});if(!project||!rooms?.length)return;try{const fileName=`GW-Medidas-${safeFileName(project.client)}-${safeFileName(project.name)}.pdf`;if(Platform.OS==='web'){const html=projectPdfHtml(project,rooms,wallsByRoom);await exportWebPdf(html,fileName);return;}let html;try{const visual=await captureProjectExportVisual(payload);html=visualPdfHtml(project,visual.image);}catch(captureError){console.warn('visual export fallback',captureError);html=projectPdfHtml(project,rooms,wallsByRoom);}const {uri}=await Print.printToFileAsync({html});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:`Exportar ${project.name}`});else Alert.alert('Arquivo criado','O PDF do projeto foi gerado com sucesso.');}catch(e){console.warn(e);Alert.alert('Exportar','Não foi possível gerar o projeto agora.')}};
   const [gwExporting,setGwExporting]=useState(false);
   const exportProjectDirectToGw=async(payload)=>{
     if(!project||!payload?.rooms?.length)return;
-    if(!project.gwSourceType){Alert.alert('GW Assistente','Vincule esta medição a um orçamento/projeto do GW Assistente antes de enviar o exportar.');return;}
-    if(Platform.OS!=='web'){Alert.alert('GW Assistente','Nesta etapa, o envio visual direto está sendo validado primeiro no computador.');return;}
+    if(!project.gwSourceType){Alert.alert('GW Assistente','Vincule esta medição a um projeto do GW Assistente antes de enviar o exportar.');return;}
     setGwExporting(true);
     try{
-      await new Promise(resolve=>setTimeout(resolve,120));
-      let node=payload.captureRef?.current;
-      if(typeof document!=='undefined'){
-        const domNode=document.querySelector('[data-gw-export-capture="project"]');
-        if(domNode)node=domNode;
-      }
-      if(!node||typeof node.getBoundingClientRect!=='function')throw new Error('Não encontrei a pré-visualização do Exportar para capturar.');
-      const html2canvas=(await import('html2canvas')).default;
-      const canvas=await html2canvas(node,{scale:2,useCORS:true,allowTaint:false,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:-window.scrollY});
-      if(!canvas?.width||!canvas?.height)throw new Error('A captura do Exportar ficou vazia.');
-      const maxWidth=1400;
-      let outCanvas=canvas;
-      if(canvas.width>maxWidth){
-        const ratio=maxWidth/canvas.width;
-        const resized=document.createElement('canvas');
-        resized.width=Math.round(canvas.width*ratio);
-        resized.height=Math.round(canvas.height*ratio);
-        const ctx=resized.getContext('2d');
-        ctx.fillStyle='#ffffff';ctx.fillRect(0,0,resized.width,resized.height);
-        ctx.drawImage(canvas,0,0,resized.width,resized.height);
-        outCanvas=resized;
-      }
-      let image=outCanvas.toDataURL('image/jpeg',0.9);
-      if(image.length>7000000){
-        const maxWidth2=1100,ratio=Math.min(1,maxWidth2/outCanvas.width);
-        const resized=document.createElement('canvas');
-        resized.width=Math.round(outCanvas.width*ratio);resized.height=Math.round(outCanvas.height*ratio);
-        const ctx=resized.getContext('2d');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,resized.width,resized.height);ctx.drawImage(outCanvas,0,0,resized.width,resized.height);
-        outCanvas=resized;image=outCanvas.toDataURL('image/jpeg',0.82);
-      }
-      const result=await gwSendExportSnapshot(project,{image,width:outCanvas.width,height:outCanvas.height,rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
+      await new Promise(resolve=>setTimeout(resolve,160));
+      const visual=await captureProjectExportVisual(payload);
+      const result=await gwSendExportSnapshot(project,{image:visual.image,width:visual.width,height:visual.height,pageCount:4,pageLayout:['planta','vista-frontal','ficha-tecnica','fotos-notas'],rooms:payload.rooms.map(r=>r.name),createdAt:new Date().toISOString()});
       if(!result?.verified)throw new Error('O GW Assistente não confirmou o recebimento do arquivo.');
       const sentAtMs=Date.now();
       const next=projects.map(p=>p.id===project.id?{...p,gwExportLastSentAt:result.createdAt,gwExportLastSentAtMs:sentAtMs,updatedAt:sentAtMs}:p);
       await persist(next);
-      if(typeof window!=='undefined'&&window.alert)window.alert('✓ Enviado ao GW Assistente\n\nO levantamento visual foi recebido e confirmado pelo GW Assistente.');
-      else Alert.alert('✓ Enviado ao GW Assistente','O levantamento visual foi recebido e confirmado pelo GW Assistente.');
+      Alert.alert('✓ Enviado ao GW Assistente','O levantamento visual foi recebido e confirmado pelo GW Assistente.');
     }catch(e){
       console.warn('GW export send failed',e);
-      const msg=e?.message||'Não foi possível enviar o Exportar projeto.';
-      if(typeof window!=='undefined'&&window.alert)window.alert(`Falha no envio ao GW Assistente\n\n${msg}`);
-      else Alert.alert('Falha no envio ao GW Assistente',msg);
+      Alert.alert('Falha no envio ao GW Assistente',e?.message||'Não foi possível enviar o Exportar projeto.');
     }finally{setGwExporting(false)}
   };
   const deleteProject=id=>confirmDelete('Excluir projeto','Excluir este projeto e todos os ambientes?',async()=>{await persist(projects.filter(p=>p.id!==id));if(activeProjectId===id){setActiveProjectId(null);setActiveRoomId(null);setScreen('home')}});
