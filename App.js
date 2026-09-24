@@ -1393,24 +1393,74 @@ function QuickPhotoMeasure({job,onBack,onUpdate,onSave,onFinish}){
 }
 
 const QUICK_STORE='gw-medidas-quick-v2';
-async function webPhotoDbPut(job){
+const QUICK_PHOTO_DB='GWMedidasPhotos';
+const QUICK_PHOTO_STORE='photos';
+
+async function openQuickPhotoDb(){
+  if(Platform.OS!=='web'||typeof indexedDB==='undefined')return null;
+  return await new Promise((res,rej)=>{
+    const r=indexedDB.open(QUICK_PHOTO_DB,1);
+    r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(QUICK_PHOTO_STORE))r.result.createObjectStore(QUICK_PHOTO_STORE)};
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  }).catch(()=>null);
+}
+async function idbPutPhoto(db,key,value){
+  if(!db||!value)return false;
+  return await new Promise(res=>{const tx=db.transaction(QUICK_PHOTO_STORE,'readwrite');tx.objectStore(QUICK_PHOTO_STORE).put(value,key);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false);tx.onabort=()=>res(false)});
+}
+async function idbGetPhoto(db,key){
+  if(!db||!key)return null;
+  return await new Promise(res=>{const tx=db.transaction(QUICK_PHOTO_STORE,'readonly'),r=tx.objectStore(QUICK_PHOTO_STORE).get(key);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null)});
+}
+// Guarda a imagem pesada no IndexedDB e deixa no AsyncStorage apenas uma referência pequena.
+// Importante: também desidrata levantamentos já carregados/hidratados, evitando estourar a quota do navegador.
+async function webPhotoDbPut(job,dbArg=null){
   if(Platform.OS!=='web'||typeof indexedDB==='undefined')return job;
-  const db=await new Promise((res,rej)=>{const r=indexedDB.open('GWMedidasPhotos',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('photos'))r.result.createObjectStore('photos')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+  const ownDb=!dbArg,db=dbArg||await openQuickPhotoDb();
+  if(!db)return job;
   const clean={...job,photos:[]};
-  for(const p of (job.photos||[])){const key=`${job.id}:${p.id}`,src=p.dataUri||p.uri;if(src&&String(src).startsWith('data:'))await new Promise((res,rej)=>{const tx=db.transaction('photos','readwrite');tx.objectStore('photos').put(src,key);tx.oncomplete=res;tx.onerror=()=>rej(tx.error)});const {dataUri,...rest}=p;clean.photos.push({...rest,uri:String(src||'').startsWith('data:')?`idb://${key}`:src})}
-  db.close();return clean;
+  for(const p of (job.photos||[])){
+    const key=p.storageKey||`${job.id}:${p.id}`;
+    const src=p.dataUri||p.uri||null;
+    if(src&&String(src).startsWith('data:')) await idbPutPhoto(db,key,src);
+    // blob: URLs do not survive reload. If this photo already has a storageKey, keep the durable reference.
+    // New photos are created with dataUri (ImagePicker base64:true), so they are persisted above.
+    const durable=(src&&String(src).startsWith('data:'))||p.storageKey?`idb://${key}`:src;
+    const {dataUri,...rest}=p;
+    clean.photos.push({...rest,storageKey:key,uri:durable});
+  }
+  if(ownDb)db.close();
+  return clean;
 }
 async function webPhotoDbHydrate(jobs){
   if(Platform.OS!=='web'||typeof indexedDB==='undefined')return jobs;
-  const db=await new Promise((res,rej)=>{const r=indexedDB.open('GWMedidasPhotos',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('photos'))r.result.createObjectStore('photos')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}).catch(()=>null);if(!db)return jobs;
-  const out=[];for(const j of jobs){const photos=[];for(const p of (j.photos||[])){let uri=p.uri;if(String(uri||'').startsWith('idb://')){const key=uri.slice(6);uri=await new Promise(res=>{const tx=db.transaction('photos','readonly'),r=tx.objectStore('photos').get(key);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null)})}photos.push({...p,uri})}out.push({...j,photos})}db.close();return out;
+  const db=await openQuickPhotoDb();if(!db)return jobs;
+  const out=[];
+  for(const j of jobs){
+    const photos=[];
+    for(const p of (j.photos||[])){
+      const ref=String(p.uri||'');
+      const key=p.storageKey||(ref.startsWith('idb://')?ref.slice(6):`${j.id}:${p.id}`);
+      let uri=p.uri;
+      if(ref.startsWith('idb://')||p.storageKey){const saved=await idbGetPhoto(db,key);if(saved)uri=saved;}
+      photos.push({...p,storageKey:key,uri});
+    }
+    out.push({...j,photos});
+  }
+  db.close();return out;
+}
+async function dehydrateQuickJobs(jobs){
+  if(Platform.OS!=='web'||typeof indexedDB==='undefined')return jobs;
+  const db=await openQuickPhotoDb();if(!db)return jobs;
+  const out=[];for(const j of jobs)out.push(await webPhotoDbPut(j,db));db.close();return out;
 }
 
 export default function App(){
   const [ready,setReady]=useState(false),[screen,setScreen]=useState('welcome'),[projects,setProjects]=useState([]),[quickJobs,setQuickJobs]=useState([]),[activeProjectId,setActiveProjectId]=useState(null),[activeRoomId,setActiveRoomId]=useState(null),[draftMeta,setDraftMeta]=useState(null),[quickJob,setQuickJob]=useState(null),[gwSending,setGwSending]=useState(false),[gwLinking,setGwLinking]=useState(false),[gwLinkModal,setGwLinkModal]=useState({visible:false,targets:[],error:'',canCreate:false});
   useEffect(()=>{(async()=>{const [v,q2,q1]=await Promise.all([AsyncStorage.getItem(STORE_KEY),AsyncStorage.getItem(QUICK_STORE),AsyncStorage.getItem('gw-medidas-quick-v1')]);if(v)try{setProjects(JSON.parse(v))}catch{};const raw=q2||q1;if(raw)try{setQuickJobs(await webPhotoDbHydrate(JSON.parse(raw)))}catch{};setReady(true)})()},[]);
   const persist=async(next)=>{setProjects(next);await AsyncStorage.setItem(STORE_KEY,JSON.stringify(next))};
-  const persistQuick=async(job)=>{const clean=await webPhotoDbPut(job);const next=[clean,...quickJobs.filter(q=>q.id!==job.id)];await AsyncStorage.setItem(QUICK_STORE,JSON.stringify(next));const hydrated=await webPhotoDbHydrate(next);setQuickJobs(hydrated);setQuickJob(hydrated.find(q=>q.id===job.id)||job);return job}
+  const persistQuick=async(job,keepActive=true)=>{const merged=[job,...quickJobs.filter(q=>q.id!==job.id)];const cleanNext=await dehydrateQuickJobs(merged);await AsyncStorage.setItem(QUICK_STORE,JSON.stringify(cleanNext));const hydrated=await webPhotoDbHydrate(cleanNext);setQuickJobs(hydrated);if(keepActive)setQuickJob(hydrated.find(q=>q.id===job.id)||job);return hydrated.find(q=>q.id===job.id)||job}
   const project=projects.find(p=>p.id===activeProjectId), room=project?.rooms?.find(r=>r.id===activeRoomId);
   const updateRoom=async(nextRoom,announce=false)=>{const next=projects.map(p=>p.id!==activeProjectId?p:{...p,updatedAt:Date.now(),rooms:p.rooms.map(r=>r.id===nextRoom.id?nextRoom:r)});await persist(next);if(announce)Alert.alert('Salvo','Medição salva.');};
   const saveExit=async()=>{if(!room)return;await updateRoom(room,false);setScreen('project')};
@@ -1526,7 +1576,7 @@ export default function App(){
   if(screen==='welcome')content=<Welcome onStart={()=>setScreen('home')}/>;
   else if(screen==='modeHome')content=<MeasurementModeHome onBack={()=>setScreen('welcome')} onQuick={()=>setScreen('quickForm')} onComplete={()=>setScreen('home')}/>;
   else if(screen==='quickForm')content=<QuickMeasurementForm onBack={()=>setScreen('home')} onContinue={j=>{setQuickJob(j);setScreen('quickPhoto')}}/>;
-  else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen('home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j)}} onFinish={async j=>{await persistQuick(j);setQuickJob(null);setScreen('projectsLibrary')}}/>;
+  else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen('home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
   else if(screen==='home')content=<Home onQuick={()=>{setQuickJob(null);setScreen('quickForm')}} onNew={()=>setScreen('new')} onProjects={()=>setScreen('projectsLibrary')} onClients={()=>setScreen('clients')} onHelp={()=>setScreen('help')} onMore={()=>setScreen('more')}/>;
   else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickPhoto')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
   else if(screen==='clients')content=<ClientsScreen projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')}/>;
