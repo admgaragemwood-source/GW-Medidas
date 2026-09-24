@@ -398,7 +398,7 @@ const normalizeName = value => String(value || '')
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/\s+/g, ' ');
 
-export async function gwCreateBudgetFromLocalMeasurement(project = {}) {
+export async function gwCreateProjectFromLocalMeasurement(project = {}) {
   if (!gwSupabase) throw new Error('Integração GW não configurada.');
   if (project?.gwSourceType) throw new Error('Esta medição já está vinculada ao GW Assistente.');
   if (!String(project?.client || '').trim()) throw new Error('Informe o nome do cliente antes de enviar.');
@@ -406,109 +406,60 @@ export async function gwCreateBudgetFromLocalMeasurement(project = {}) {
 
   const session = await gwGetSession();
   if (!session?.user) throw new Error('Conecte sua conta do GW Assistente antes de enviar.');
-
   const workspace = await gwLoadWorkspaceProjects();
   const companyId = workspace.companyId;
   const targetName = normalizeName(project.client);
-  const existingClient = (workspace.clientes || []).find(c => normalizeName(c?.nome || c?.name) === targetName);
-
-  let clientData = existingClient || null;
+  let clientData = (workspace.clientes || []).find(c => normalizeName(c?.nome || c?.name) === targetName) || null;
   let clientCreated = false;
-
   if (!clientData) {
     const clientId = makeGwId('cliente');
-    clientData = {
-      id: clientId,
-      nome: String(project.client).trim(),
-      ultimaInteracao: 'Hoje',
-      proximaAcao: 'Definir próxima ação',
-      origem: 'GW Medidas',
-      criadoEm: new Date().toISOString(),
-    };
-    const { error: clientError } = await gwSupabase.from('gw_clientes').upsert({
-      company_id: companyId,
-      source_id: clientId,
-      data: clientData,
-    }, { onConflict: 'company_id,source_id' });
-    if (clientError) throw clientError;
+    clientData = { id:clientId, nome:String(project.client).trim(), ultimaInteracao:'Hoje', proximaAcao:'Definir próxima ação', origem:'GW Medidas', criadoEm:new Date().toISOString() };
+    const { error } = await gwSupabase.from('gw_clientes').upsert({ company_id:companyId, source_id:clientId, data:clientData }, { onConflict:'company_id,source_id' });
+    if (error) throw error;
     clientCreated = true;
   }
-
-  const budgetId = makeGwId('orcamento');
-  const measurement = buildGwMeasurementPayload({ ...project, gwBudgetId: budgetId });
-  const projectName = String(project?.name || 'Novo orçamento').trim() || 'Novo orçamento';
+  const projectId = makeGwId('projeto');
+  const measurement = buildGwMeasurementPayload({ ...project, gwProjectId:projectId });
   const nowIso = new Date().toISOString();
-  const budgetData = {
-    id: budgetId,
-    cliente: String(project.client).trim(),
-    clienteId: clientData?.id || clientData?.__sourceId || null,
-    projeto: projectName,
-    projetosOrcamento: [{
-      id: makeGwId('projeto-orcamento'),
-      nome: projectName,
-      descricao: '',
-      servicosInclusos: '',
-      materiaisItens: [],
-      metodoCalculo: 'manual',
-      valor: '',
-      valorFinal: '',
-      ordem: 1,
-      subtotal: 0,
-      custoMateriais: 0,
-      custoTotal: 0,
-      areaTotal: 0,
-      valorSugerido: 0,
-      lucroEstimado: 0,
-    }],
-    descricao: '',
-    materiais: '',
-    servicosInclusos: '',
-    valor: 0,
-    metodoCalculo: 'manual',
-    formacaoPreco: {
-      metodo: 'manual',
-      valorSugerido: 0,
-      valorFinal: 0,
-      custoFinanceiro: 0,
-      custoEstimado: 0,
-      custoTotal: 0,
-      lucroEstimado: 0,
-    },
-    dataOrcamento: nowIso.slice(0, 10),
-    condicoesPagamento: '',
-    prazo: '',
-    garantia: '',
-    validade: '7 dias',
-    pagamentoAcordado: [],
-    status: 'Rascunho',
-    enviadoEm: '—',
-    ultimaInteracao: 'Hoje',
-    proximaAcao: 'Finalizar orçamento',
-    observacao: '',
-    mensagemFinal: '',
-    origem: 'GW Medidas',
-    levantamentoGW: measurement,
-    levantamentoGWAtualizadoEm: measurement.syncedAt,
-    criadoEm: nowIso,
+  const projectName = String(project?.name || 'Projeto GW Medidas').trim() || 'Projeto GW Medidas';
+  const projectData = {
+    id:projectId, nome:projectName, projeto:projectName, cliente:String(project.client).trim(),
+    clienteId:clientData?.id || clientData?.__sourceId || null, origem:'GW Medidas', etapa:'Levantamento', progresso:0,
+    levantamentoGW:measurement, levantamentoGWAtualizadoEm:measurement.syncedAt, criadoEm:nowIso, atualizadoEm:nowIso,
   };
-
-  const { error: budgetError } = await gwSupabase.from('gw_orcamentos').upsert({
-    company_id: companyId,
-    source_id: budgetId,
-    data: budgetData,
-  }, { onConflict: 'company_id,source_id' });
-  if (budgetError) throw budgetError;
-
-  return {
-    companyId,
-    budgetId,
-    clientId: clientData?.id || clientData?.__sourceId || null,
-    clientCreated,
-    syncedAt: measurement.syncedAt,
-    environments: measurement.environments.length,
-  };
+  const { error:projectError } = await gwSupabase.from('gw_projetos').upsert({ company_id:companyId, source_id:projectId, data:projectData }, { onConflict:'company_id,source_id' });
+  if (projectError) throw projectError;
+  return { companyId, projectId, clientId:clientData?.id || clientData?.__sourceId || null, clientCreated, syncedAt:measurement.syncedAt, environments:measurement.environments.length };
 }
 
+function quickMarksForGw(marks = []) {
+  return (Array.isArray(marks)?marks:[]).map(m=>({ ...m }));
+}
+
+export async function gwCreateProjectFromQuickMeasurement(job = {}) {
+  if (!gwSupabase) throw new Error('Integração GW não configurada.');
+  if (!String(job?.client || '').trim()) throw new Error('Informe o nome do cliente antes de enviar.');
+  const session = await gwGetSession();
+  if (!session?.user) throw new Error('Conecte sua conta do GW Assistente antes de enviar.');
+  const workspace = await gwLoadWorkspaceProjects();
+  const companyId = workspace.companyId;
+  const targetName = normalizeName(job.client);
+  let clientData = (workspace.clientes || []).find(c => normalizeName(c?.nome || c?.name) === targetName) || null;
+  let clientCreated = false;
+  if (!clientData) {
+    const clientId=makeGwId('cliente');
+    clientData={id:clientId,nome:String(job.client).trim(),telefone:job.phone||'',endereco:job.address||'',ultimaInteracao:'Hoje',proximaAcao:'Definir próxima ação',origem:'GW Medidas',criadoEm:new Date().toISOString()};
+    const {error}=await gwSupabase.from('gw_clientes').upsert({company_id:companyId,source_id:clientId,data:clientData},{onConflict:'company_id,source_id'}); if(error)throw error; clientCreated=true;
+  }
+  const projectId=makeGwId('projeto');
+  const nowIso=new Date().toISOString();
+  const photos=(job.photos||[]).map((ph,i)=>({id:ph.id||`foto-${i+1}`,name:`Foto ${i+1}`,note:ph.note||'',marks:quickMarksForGw(ph.marks),hasImage:Boolean(ph.uri||ph.dataUri),localUri:ph.uri||'',savedAt:ph.savedAt||null}));
+  const measurement={version:3,source:'gw-medidas',mode:'quick',syncedAt:nowIso,client:job.client||'',title:job.project||'Medição rápida',phone:job.phone||'',address:job.address||'',environments:[{id:`quick-${job.id||projectId}`,name:job.project||'Medição rápida',wallCount:0,lengths:[],height:0,notes:'',elements:[],photos,photoCount:photos.length,quickMeasurement:true}]};
+  const projectName=String(job.project||'Medição rápida').trim();
+  const projectData={id:projectId,nome:projectName,projeto:projectName,cliente:String(job.client).trim(),clienteId:clientData?.id||clientData?.__sourceId||null,origem:'GW Medidas',etapa:'Levantamento',progresso:0,levantamentoGW:measurement,levantamentoGWAtualizadoEm:nowIso,criadoEm:nowIso,atualizadoEm:nowIso};
+  const {error:projectError}=await gwSupabase.from('gw_projetos').upsert({company_id:companyId,source_id:projectId,data:projectData},{onConflict:'company_id,source_id'}); if(projectError)throw projectError;
+  return {companyId,projectId,clientId:clientData?.id||clientData?.__sourceId||null,clientCreated,syncedAt:nowIso,photos:photos.length};
+}
 
 export async function gwSendExportSnapshot(project = {}, snapshot = {}) {
   if (!gwSupabase) throw new Error('Integração GW não configurada.');

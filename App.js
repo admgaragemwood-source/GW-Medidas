@@ -32,7 +32,8 @@ import {
   mergeGwProjects,
   gwSendMeasurementToBudget,
   gwSendMeasurementToProject,
-  gwCreateBudgetFromLocalMeasurement,
+  gwCreateProjectFromLocalMeasurement,
+  gwCreateProjectFromQuickMeasurement,
   gwSendExportSnapshot,
 } from './gwIntegration';
 
@@ -1602,24 +1603,34 @@ export default function App(){
     setGwLinkModal({visible:false,targets:[],error:''});
     Alert.alert('Vínculo criado',`Esta medição agora está vinculada a ${target.type==='orcamento'?'um orçamento':'um projeto'} do GW Assistente.`);
   };
-  const createBudgetFromLocal=async()=>{
+  const createProjectFromLocal=async()=>{
     if(!project||project.gwSourceType)return;
     if(!(project.rooms||[]).length){Alert.alert('GW Assistente','Crie pelo menos um ambiente antes de enviar.');return;}
     setGwLinking(true);
     try{
-      const result=await gwCreateBudgetFromLocalMeasurement(project);
-      const next=projects.map(p=>p.id!==project.id?p:{...p,gwImported:true,gwSourceType:'orcamento',gwBudgetId:result.budgetId,gwProjectId:null,gwCompanyId:result.companyId,gwLinkedFromLocal:true,gwSyncAt:Date.now(),gwLastPushAt:result.syncedAt,gwLastPushRooms:result.environments||0,updatedAt:Date.now()});
+      const result=await gwCreateProjectFromLocalMeasurement(project);
+      const next=projects.map(p=>p.id!==project.id?p:{...p,gwImported:true,gwSourceType:'projeto',gwBudgetId:null,gwProjectId:result.projectId,gwCompanyId:result.companyId,gwLinkedFromLocal:true,gwSyncAt:Date.now(),gwLastPushAt:result.syncedAt,gwLastPushRooms:result.environments||0,updatedAt:Date.now()});
       await persist(next);
       setGwLinkModal({visible:false,targets:[],error:'',canCreate:false});
-      Alert.alert('Enviado ao GW Assistente',`O cliente ${result.clientCreated?'foi criado':'já existia'} no GW Assistente. Um novo orçamento foi criado e recebeu ${result.environments||0} ambiente(s) do levantamento.`);
-    }catch(e){console.warn(e);setGwLinkModal(m=>({...m,error:e?.message||'Não consegui criar o orçamento no GW Assistente.'}));}finally{setGwLinking(false)}
+      Alert.alert('Enviado ao GW Assistente',`O cliente ${result.clientCreated?'foi criado':'já existia'} no GW Assistente. O projeto foi criado e o levantamento entrou em Projeto > Medidas > Medidas do GW Medidas.`);
+    }catch(e){console.warn(e);setGwLinkModal(m=>({...m,error:e?.message||'Não consegui criar o projeto no GW Assistente.'}));}finally{setGwLinking(false)}
+  };
+  const linkQuickToGw=async()=>{
+    if(!quickJob)return;
+    setGwLinking(true);
+    try{
+      const result=await gwCreateProjectFromQuickMeasurement(quickJob);
+      const updated={...quickJob,gwSourceType:'projeto',gwProjectId:result.projectId,gwCompanyId:result.companyId,gwLinkedFromLocal:true,gwSyncAt:Date.now(),gwLastPushAt:result.syncedAt,updatedAt:Date.now()};
+      await persistQuick(updated,true); setQuickJob(updated);
+      Alert.alert('Enviado ao GW Assistente',`Projeto criado para ${quickJob.client}. A medição rápida foi enviada para Projeto > Medidas > Medidas do GW Medidas.`);
+    }catch(e){console.warn(e);Alert.alert('GW Assistente',e?.message||'Não consegui enviar esta medição rápida.');}finally{setGwLinking(false)}
   };
   if(!ready)return <AppFrame><View style={styles.loading}><Text style={styles.brand}><Text style={{color:INK}}>GW</Text> <Text style={{color:BLUE}}>MEDIDAS</Text></Text></View></AppFrame>;
   let content;
   if(screen==='welcome')content=<Welcome onStart={()=>setScreen('home')}/>;
   else if(screen==='modeHome')content=<MeasurementModeHome onBack={()=>setScreen('welcome')} onQuick={()=>setScreen('quickForm')} onComplete={()=>setScreen('home')}/>;
   else if(screen==='quickForm')content=<QuickMeasurementForm onBack={()=>setScreen('home')} onContinue={j=>{setQuickJob(j);setScreen('quickPhoto')}}/>;
-  else if(screen==='quickDetail')content=<QuickProjectScreen job={quickJob} onBack={()=>setScreen('projectsLibrary')} onOpen={()=>setScreen('quickPhoto')} onDelete={()=>quickJob&&deleteQuickJob(quickJob.id)} onLinkToGw={()=>Alert.alert('GW Assistente','O vínculo da medição rápida será enviado para o mesmo destino técnico da medição completa na etapa de integração.')} />;
+  else if(screen==='quickDetail')content=<QuickProjectScreen job={quickJob} onBack={()=>setScreen('projectsLibrary')} onOpen={()=>setScreen('quickPhoto')} onDelete={()=>quickJob&&deleteQuickJob(quickJob.id)} onLinkToGw={linkQuickToGw} />;
   else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen(quickJob?.id?'quickDetail':'home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
   else if(screen==='home')content=<Home onQuick={()=>{setQuickJob(null);setScreen('quickForm')}} onNew={()=>setScreen('new')} onProjects={()=>setScreen('projectsLibrary')} onClients={()=>setScreen('clients')} onHelp={()=>setScreen('help')} onMore={()=>setScreen('more')}/>;
   else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickDetail')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onDeleteQuick={deleteQuickJob} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
@@ -1634,7 +1645,7 @@ export default function App(){
   else if(screen==='projectExport')content=<ProjectExportPreview project={project} onBack={()=>setScreen('project')} onExport={finalizeProjectExport} onExportGw={exportProjectDirectToGw} gwExporting={gwExporting}/>;
   else if(screen==='export')content=<ExportPreview project={project} room={room} onBack={()=>setScreen('measure')} onExport={finalizeExport}/>;
   else if(screen==='photos')content=<Photos room={room} onBack={()=>setScreen('measure')} onUpdateRoom={updateRoom}/>;
-  return <GestureHandlerRootView style={{flex:1}}><AppFrame>{content}<Modal visible={gwLinkModal.visible} transparent animationType="fade" onRequestClose={()=>setGwLinkModal({visible:false,targets:[],error:''})}><View style={styles.modalShade}><View style={[styles.modalCard,{maxHeight:'78%'}]}><Text style={styles.modalTitle}>Enviar ao GW Assistente</Text><Text style={styles.modalText}>Para uma medição criada aqui, você pode criar um novo orçamento no GW Assistente ou vinculá-la a algo que já existe.</Text>{gwLinkModal.canCreate?<Pressable disabled={gwLinking} onPress={createBudgetFromLocal} style={[styles.gwSendBtn,{marginTop:14,opacity:gwLinking?.6:1}]}><Text style={styles.gwSendBtnText}>{gwLinking?'Enviando...':`+ Criar orçamento no GW para ${project?.client||'este cliente'}`}</Text></Pressable>:null}{gwLinkModal.targets?.length?<Text style={[styles.modalText,{marginTop:14,fontWeight:'800',color:INK}]}>Ou vincular a um orçamento/projeto existente:</Text>:null}{gwLinkModal.error?<Text style={[styles.modalText,{color:'#C62828',marginTop:10}]}>{gwLinkModal.error}</Text>:null}<ScrollView style={{marginTop:10}}>{gwLinkModal.targets.map(t=><Pressable key={`${t.type}-${t.id}`} onPress={()=>linkCurrentToGw(t)} style={styles.linkTargetCard}><Text style={styles.linkTargetTitle}>{t.name}</Text><Text style={styles.linkTargetMeta}>{t.client} · {t.type==='orcamento'?`Orçamento · ${t.status}`:'Projeto aprovado'}</Text></Pressable>)}</ScrollView><Pressable onPress={()=>setGwLinkModal({visible:false,targets:[],error:'',canCreate:false})} style={[styles.gwSendBtn,{marginTop:12,backgroundColor:'#EEF2F6'}]}><Text style={[styles.gwSendBtnText,{color:INK}]}>Cancelar</Text></Pressable></View></View></Modal></AppFrame></GestureHandlerRootView>;
+  return <GestureHandlerRootView style={{flex:1}}><AppFrame>{content}<Modal visible={gwLinkModal.visible} transparent animationType="fade" onRequestClose={()=>setGwLinkModal({visible:false,targets:[],error:''})}><View style={styles.modalShade}><View style={[styles.modalCard,{maxHeight:'78%'}]}><Text style={styles.modalTitle}>Enviar ao GW Assistente</Text><Text style={styles.modalText}>A medição pode criar um Projeto no GW Assistente e será gravada em Dossiê Técnico > Medidas > Medidas do GW Medidas. Você também pode vinculá-la a um projeto existente.</Text>{gwLinkModal.canCreate?<Pressable disabled={gwLinking} onPress={createProjectFromLocal} style={[styles.gwSendBtn,{marginTop:14,opacity:gwLinking?.6:1}]}><Text style={styles.gwSendBtnText}>{gwLinking?'Enviando...':`+ Criar projeto no GW para ${project?.client||'este cliente'}`}</Text></Pressable>:null}{gwLinkModal.targets?.length?<Text style={[styles.modalText,{marginTop:14,fontWeight:'800',color:INK}]}>Ou vincular a um orçamento/projeto existente:</Text>:null}{gwLinkModal.error?<Text style={[styles.modalText,{color:'#C62828',marginTop:10}]}>{gwLinkModal.error}</Text>:null}<ScrollView style={{marginTop:10}}>{gwLinkModal.targets.map(t=><Pressable key={`${t.type}-${t.id}`} onPress={()=>linkCurrentToGw(t)} style={styles.linkTargetCard}><Text style={styles.linkTargetTitle}>{t.name}</Text><Text style={styles.linkTargetMeta}>{t.client} · {t.type==='orcamento'?`Orçamento · ${t.status}`:'Projeto aprovado'}</Text></Pressable>)}</ScrollView><Pressable onPress={()=>setGwLinkModal({visible:false,targets:[],error:'',canCreate:false})} style={[styles.gwSendBtn,{marginTop:12,backgroundColor:'#EEF2F6'}]}><Text style={[styles.gwSendBtnText,{color:INK}]}>Cancelar</Text></Pressable></View></View></Modal></AppFrame></GestureHandlerRootView>;
 }
 function NewRoomName({meta,onBack,onContinue}){const [room,setRoom]=useState('');return <View style={styles.screen}><Header title="Novo ambiente" subtitle={`${meta.client} · ${meta.project}`} onBack={onBack}/><View style={styles.pad}><Field label="Ambiente" value={room} onChangeText={setRoom} placeholder="Ex.: Banheiro"/><Button disabled={!room.trim()} title="Continuar" onPress={()=>onContinue(room.trim())}/></View></View>}
 
