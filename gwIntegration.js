@@ -63,23 +63,19 @@ export async function gwLoadWorkspaceProjects() {
   const companyId = membership.company_id;
   const [
     { data: projetoRows, error: projetosError },
-    { data: orcamentoRows, error: orcamentosError },
     { data: clienteRows, error: clientesError },
   ] = await Promise.all([
     gwSupabase.from('gw_projetos').select('source_id,data,updated_at,created_at').eq('company_id', companyId).order('created_at', { ascending: true }),
-    gwSupabase.from('gw_orcamentos').select('source_id,data,updated_at,created_at').eq('company_id', companyId).order('created_at', { ascending: true }),
     gwSupabase.from('gw_clientes').select('source_id,data,updated_at,created_at').eq('company_id', companyId).order('created_at', { ascending: true }),
   ]);
 
   if (projetosError) throw projetosError;
-  if (orcamentosError) throw orcamentosError;
   if (clientesError) throw clientesError;
 
   return {
     companyId,
     user,
     projetos: (projetoRows || []).map(row => ({ ...(row?.data || {}), __sourceId: row?.source_id, __updatedAt: row?.updated_at })),
-    orcamentos: (orcamentoRows || []).map(row => ({ ...(row?.data || {}), __sourceId: row?.source_id, __updatedAt: row?.updated_at })),
     clientes: (clienteRows || []).map(row => ({ ...(row?.data || {}), __sourceId: row?.source_id, __updatedAt: row?.updated_at })),
   };
 }
@@ -156,17 +152,8 @@ function explicitRoomsFrom(item) {
 export function mergeGwProjects(localProjects = [], remotePayload = {}) {
   const local = Array.isArray(localProjects) ? localProjects : [];
   const remoteProjects = Array.isArray(remotePayload?.projetos) ? remotePayload.projetos : [];
-  const remoteBudgets = Array.isArray(remotePayload?.orcamentos) ? remotePayload.orcamentos : [];
   const clients = Array.isArray(remotePayload?.clientes) ? remotePayload.clientes : [];
   const byClientId = clientMap(clients);
-
-  // Se um orçamento já virou Projeto no GW Assistente, exibimos apenas o Projeto.
-  const budgetIdsWithProject = new Set(
-    remoteProjects
-      .map(p => p?.orcamentoId)
-      .filter(v => v !== undefined && v !== null && String(v).trim())
-      .map(v => String(v))
-  );
 
   const importedProjects = remoteProjects.map((rp, index) => {
     const sourceId = String(rp?.id ?? rp?.__sourceId ?? `gw-project-${index}`);
@@ -186,7 +173,7 @@ export function mergeGwProjects(localProjects = [], remotePayload = {}) {
       gwImported: true,
       gwSourceType: 'projeto',
       gwProjectId: sourceId,
-      gwBudgetId: rp?.orcamentoId != null ? String(rp.orcamentoId) : (current?.gwBudgetId || null),
+      gwBudgetId: null,
       gwCompanyId: remotePayload?.companyId || current?.gwCompanyId || null,
       gwSyncAt: Date.now(),
       gwProjectSnapshot: {
@@ -198,42 +185,9 @@ export function mergeGwProjects(localProjects = [], remotePayload = {}) {
     };
   });
 
-  const importedBudgets = remoteBudgets
-    .filter(rb => {
-      const bid = String(rb?.id ?? rb?.__sourceId ?? '');
-      return bid && !budgetIdsWithProject.has(bid);
-    })
-    .map((rb, index) => {
-      const sourceId = String(rb?.id ?? rb?.__sourceId ?? `gw-budget-${index}`);
-      const current = local.find(p => p.gwSourceType === 'orcamento' && String(p.gwBudgetId || '') === sourceId);
-      const clientName = clientNameFor(rb, byClientId, current?.client || 'Sem cliente');
-      const budgetName = rb?.projeto || rb?.nome || rb?.projetosOrcamento?.[0]?.nome || current?.name || `Orçamento ${index + 1}`;
-      const ambientes = explicitRoomsFrom(rb);
-      return {
-        ...(current || {}),
-        id: current?.id || `gw-budget-${sourceId}`,
-        client: clientName,
-        name: budgetName,
-        rooms: mergeRooms(current?.rooms || [], ambientes, sourceId),
-        createdAt: current?.createdAt || Date.now(),
-        updatedAt: Date.now(),
-        gwImported: true,
-        gwSourceType: 'orcamento',
-        gwBudgetId: sourceId,
-        gwCompanyId: remotePayload?.companyId || current?.gwCompanyId || null,
-        gwSyncAt: Date.now(),
-        gwBudgetSnapshot: {
-          status: rb?.status || 'Rascunho',
-          valor: Number(rb?.valor || 0),
-          proximaAcao: rb?.proximaAcao || '',
-          enviadoEm: rb?.enviadoEm || '',
-        },
-      };
-    });
-
-  // Dados locais nunca são apagados. Dados importados refletem o que existe agora no GW.
+  // A integração atual usa Projeto como centro do levantamento. Orçamentos não são importados.
   const localOnly = local.filter(p => !p.gwImported);
-  return [...localOnly, ...importedBudgets, ...importedProjects];
+  return [...localOnly, ...importedProjects];
 }
 
 
