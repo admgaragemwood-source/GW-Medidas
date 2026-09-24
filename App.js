@@ -365,8 +365,7 @@ function PlanWallDimensions({walls,activeIndex,selectedElement,onChooseWall,onEd
         <Line x1={b.x-ny*4} y1={b.y+nx*4} x2={b.x+ny*4} y2={b.y-nx*4} stroke={dim} strokeWidth="1.1"/>
         <Rect x={tx-25} y={ty-8} width="50" height="16" rx="5" fill="#FFFFFF" stroke={active?'#B8D4FF':'#E2E8EE'} strokeWidth=".6"/>
         <SvgText x={tx} y={ty+3} fontSize="9.5" fontWeight="800" fill={dim} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${tx} ${ty})`} onPress={()=>{if(onChooseWall)onChooseWall(i);if(onEditWall)onEditWall(i)}}>{numFmt(w.length)} m</SvgText>
-        <Rect x={insideX-22} y={insideY-7} width="44" height="14" rx="4" fill="rgba(255,255,255,.86)"/>
-        <SvgText x={insideX} y={insideY+3} fontSize="7.8" fontWeight="800" fill={active?BLUE:'#657483'} textAnchor="middle">Parede {String.fromCharCode(65+i)}</SvgText>
+        <SvgText x={insideX} y={insideY+3} fontSize="7.8" fontWeight="800" fill={active?BLUE:'#657483'} textAnchor="middle" transform={`rotate(${Math.abs(rot)>90?rot+180:rot} ${insideX} ${insideY})`}>Parede {String.fromCharCode(65+i)}</SvgText>
       </React.Fragment>
     })}
   </Svg>;
@@ -1090,9 +1089,9 @@ function ElementVisual({type,width,height}){
   if(type==='Mesa') return svg(<><Rect x="8" y="18" width="84" height="36" rx="4" fill="#CEB38F" stroke="#725B43" strokeWidth="3"/><Line x1="18" y1="54" x2="13" y2="94" stroke="#725B43" strokeWidth="5"/><Line x1="82" y1="54" x2="87" y2="94" stroke="#725B43" strokeWidth="5"/></>);
   if(type==='Tomada') return svg(<><Rect x="13" y="18" width="74" height="64" rx="13" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Circle cx="36" cy="48" r="6" fill="#46515A"/><Circle cx="64" cy="48" r="6" fill="#46515A"/><Path d="M 50 58 L 43 70 L 57 70 Z" fill="#46515A"/></>);
   if(type==='Interruptor') return svg(<><Rect x="17" y="12" width="66" height="76" rx="10" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Rect x="31" y="24" width="38" height="52" rx="7" fill="#E8EDF0" stroke="#6A757D" strokeWidth="3"/><Line x1="34" y1="50" x2="66" y2="50" stroke="#6A757D" strokeWidth="3"/></>);
-  if(type==='Água') return svg(<><Circle cx="50" cy="55" r="22" fill="#E9F6FC" stroke="#39738C" strokeWidth="5"/><Path d="M 50 10 C 37 29 30 39 30 52 C 30 66 39 76 50 76 C 61 76 70 66 70 52 C 70 39 63 29 50 10 Z" fill="#BDE8F8" stroke="#39738C" strokeWidth="3"/></>);
-  if(type==='Esgoto') return svg(<><Circle cx="50" cy="50" r="32" fill="#F5F7F8" stroke="#4B565E" strokeWidth="5"/><Circle cx="50" cy="50" r="17" fill="none" stroke="#77828A" strokeWidth="4"/><Line x1="30" y1="50" x2="70" y2="50" stroke="#77828A" strokeWidth="3"/><Line x1="50" y1="30" x2="50" y2="70" stroke="#77828A" strokeWidth="3"/></>);
-  if(type==='Gás') return svg(<><Circle cx="50" cy="50" r="31" fill="#FFF8E7" stroke="#75602D" strokeWidth="5"/><Path d="M 52 18 C 65 34 69 42 66 55 C 63 68 55 77 43 76 C 31 75 25 66 27 55 C 29 44 39 39 42 29 C 44 23 43 18 43 18 C 47 20 50 23 52 27 C 54 24 54 21 52 18 Z" fill="#E6C15D" stroke="#75602D" strokeWidth="2"/></>);
+  if(type==='Água') return svg(<Circle cx="50" cy="50" r="18" fill="#69BFE7"/>);
+  if(type==='Esgoto') return svg(<Circle cx="50" cy="50" r="18" fill="#30383E"/>);
+  if(type==='Gás') return svg(<Circle cx="50" cy="50" r="18" fill="#E6B84A"/>);
   if(type==='TV/Dados') return svg(<><Rect x="12" y="20" width="76" height="60" rx="9" fill="#FBFCFD" stroke="#46515A" strokeWidth="5"/><Rect x="27" y="34" width="46" height="28" rx="3" fill="#DDE6EB" stroke="#6C7880" strokeWidth="3"/><Line x1="42" y1="70" x2="58" y2="70" stroke="#46515A" strokeWidth="4"/></>);
   if(isPoint(type)) return svg(<><Circle cx="50" cy="50" r="32" fill="#FBFCFD" stroke="#515C64" strokeWidth="5"/><Circle cx="50" cy="50" r="7" fill="#515C64"/></>);
   if(isStructure(type)) return svg(<><Defs><LinearGradient id="structG" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#D5DADD"/><Stop offset="1" stopColor="#9FA8AE"/></LinearGradient></Defs><Rect x="4" y="3" width="92" height="94" fill="url(#structG)" stroke="#626B71" strokeWidth="2"/>{[18,35,52,69,86].map(y=><Line key={y} x1="8" y1={y} x2="92" y2={y-10} stroke="#B8C0C4" strokeWidth="1"/>)}</>);
@@ -1102,8 +1101,8 @@ function ElementVisual({type,width,height}){
 function WallObject({obj,wallW,wallH,boardW,boardH,px,selected,onSelect,onEdit,onChange,pinchingRef}){
   const opening=isOpening(obj.type), equip=isEquipment(obj.type), structure=isStructure(obj.type), reserved=isReservedSpace(obj.type), point=isPoint(obj.type), finish=groupOf(obj.type)==='Acabamentos';
   const naturalW=Math.max(3,obj.width*px), naturalH=Math.max(3,obj.height*px);
-  const vw=point?26:Math.max(naturalW,opening?26:equip?18:structure?10:finish?8:16);
-  const vh=point?26:obj.type==='Rodapé'?Math.max(naturalH,6):obj.type==='Sanca'?Math.max(naturalH,7):obj.type==='Pia'?Math.max(naturalH,9):obj.type==='Cooktop'?Math.max(naturalH,6):Math.max(naturalH,opening?26:equip?18:structure?10:10);
+  const vw=point?18:Math.max(naturalW,opening?26:equip?18:structure?10:finish?8:16);
+  const vh=point?18:obj.type==='Rodapé'?Math.max(naturalH,6):obj.type==='Sanca'?Math.max(naturalH,7):obj.type==='Pia'?Math.max(naturalH,9):obj.type==='Cooktop'?Math.max(naturalH,6):Math.max(naturalH,opening?26:equip?18:structure?10:10);
   const x=27+obj.left*px,y=46+(wallH-obj.bottom-obj.height)*px;const start=useRef({left:obj.left,bottom:obj.bottom});
   const pan=Gesture.Pan().minDistance(7).activateAfterLongPress(70).maxPointers(1).runOnJS(true).onBegin(()=>{start.current={left:obj.left,bottom:obj.bottom};}).onUpdate(e=>{if(pinchingRef?.current)return;onChange({...obj,left:clamp(start.current.left+e.translationX/px,0,Math.max(0,wallW-obj.width)),bottom:clamp(start.current.bottom-e.translationY/px,0,Math.max(0,wallH-obj.height))})});
   const tap=Gesture.Tap().maxDistance(8).runOnJS(true).onEnd((_e,ok)=>{if(ok)onSelect()});
@@ -1315,6 +1314,12 @@ function confirmDelete(title,message,onConfirm){
 }
 
 
+
+function QuickProjectScreen({job,onBack,onOpen,onDelete,onLinkToGw}){
+  if(!job)return null;
+  const photos=job.photos||[];
+  return <View style={styles.screen}><Header title={job.project||'Medição rápida'} subtitle={`${job.client||'Sem cliente'} · Medição local`} onBack={onBack} right={<Pressable onPress={onDelete} style={styles.deleteHeaderBtn}><Text style={styles.deleteHeaderText}>Excluir</Text></Pressable>}/><ScrollView style={{flex:1}} contentContainerStyle={styles.projectList}><View style={styles.gwSendCard}><View style={{flex:1}}><Text style={styles.gwSendTitle}>Medição local</Text><Text style={styles.gwSendText}>Esta medição ainda não tem destino no GW Assistente. Vincule-a para continuar o fluxo do projeto.</Text></View><Pressable onPress={onLinkToGw} style={styles.gwSendBtn}><Text style={styles.gwSendBtnText}>↔ Vincular ao GW Assistente</Text></Pressable></View><Text style={styles.sectionKicker}>FOTOS DO LEVANTAMENTO</Text>{photos.length?photos.map((ph,i)=><Pressable key={ph.id||i} onPress={onOpen} style={styles.quickSavedCard}><View style={styles.quickSavedThumb}>{ph.uri?<Image source={{uri:ph.uri}} style={StyleSheet.absoluteFillObject} resizeMode="cover"/>:<Text style={styles.quickSavedIcon}>📷</Text>}</View><View style={{flex:1}}><Text style={styles.infoTitle}>Foto {i+1}</Text><Text style={styles.infoText}>{(ph.marks||[]).length} marcação{(ph.marks||[]).length!==1?'ões':''}</Text><View style={styles.quickSavedPill}><Text style={styles.quickSavedPillText}>⚡ Medição rápida</Text></View></View><Text style={styles.chevSmall}>›</Text></Pressable>):<Pressable onPress={onOpen} style={styles.infoCard}><View style={styles.infoIcon}><Text style={styles.infoIconText}>📷</Text></View><View style={{flex:1}}><Text style={styles.infoTitle}>Adicionar primeira foto</Text><Text style={styles.infoText}>Abra a medição rápida para fotografar e medir.</Text></View><Text style={styles.chevSmall}>›</Text></Pressable>}</ScrollView></View>;
+}
 
 function MeasurementModeHome({onBack,onQuick,onComplete}){
   return <View style={styles.screen}><View style={styles.modeTop}><Text style={styles.brand}><Text style={{color:INK}}>GW</Text> <Text style={{color:BLUE}}>MEDIDAS</Text></Text><Text style={styles.modeTitle}>Como você quer medir hoje?</Text><Text style={styles.modeSub}>Escolha o modo ideal para o serviço.</Text></View><View style={styles.modeCards}>
@@ -1616,9 +1621,10 @@ export default function App(){
   if(screen==='welcome')content=<Welcome onStart={()=>setScreen('home')}/>;
   else if(screen==='modeHome')content=<MeasurementModeHome onBack={()=>setScreen('welcome')} onQuick={()=>setScreen('quickForm')} onComplete={()=>setScreen('home')}/>;
   else if(screen==='quickForm')content=<QuickMeasurementForm onBack={()=>setScreen('home')} onContinue={j=>{setQuickJob(j);setScreen('quickPhoto')}}/>;
-  else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen('home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
+  else if(screen==='quickDetail')content=<QuickProjectScreen job={quickJob} onBack={()=>setScreen('projectsLibrary')} onOpen={()=>setScreen('quickPhoto')} onDelete={()=>quickJob&&deleteQuickJob(quickJob.id)} onLinkToGw={()=>Alert.alert('GW Assistente','O vínculo da medição rápida será enviado para o mesmo destino técnico da medição completa na etapa de integração.')} />;
+  else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen(quickJob?.id?'quickDetail':'home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
   else if(screen==='home')content=<Home onQuick={()=>{setQuickJob(null);setScreen('quickForm')}} onNew={()=>setScreen('new')} onProjects={()=>setScreen('projectsLibrary')} onClients={()=>setScreen('clients')} onHelp={()=>setScreen('help')} onMore={()=>setScreen('more')}/>;
-  else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickPhoto')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onDeleteQuick={deleteQuickJob} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
+  else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickDetail')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onDeleteQuick={deleteQuickJob} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
   else if(screen==='clients')content=<ClientsScreen projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')}/>;
   else if(screen==='help')content=<HelpScreen onBack={()=>setScreen('home')}/>;
   else if(screen==='more')content=<MoreScreen onBack={()=>setScreen('home')} onNew={()=>setScreen('new')} onIntegration={()=>setScreen('gwIntegration')}/>;
@@ -1665,7 +1671,7 @@ homeList:{paddingHorizontal:14,paddingTop:12,paddingBottom:18,gap:8},homeFooter:
   techTypeBadge:{minWidth:52,height:38,paddingHorizontal:8,borderRadius:8,borderWidth:1,borderColor:'#C7D0D9',backgroundColor:'#F7F9FA',alignItems:'center',justifyContent:'center'},
   techTypeBadgeText:{fontSize:9,fontWeight:'800',color:'#334155',textTransform:'uppercase'},
   objStructure:{backgroundColor:'rgba(217,224,229,.86)',borderColor:'#65727E',borderRadius:1},
-  objPoint:{backgroundColor:WHITE,borderColor:'#6B7785',borderRadius:20},
+  objPoint:{backgroundColor:'transparent',borderColor:'transparent',borderWidth:0,borderRadius:0},
   techDimLine:{position:'absolute',bottom:7,height:13,borderTopWidth:1,borderTopColor:TECH.dim,flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start'},
   techDimTick:{width:1,height:7,backgroundColor:TECH.dim,marginTop:-3},
   techDimText:{position:'absolute',top:-8,alignSelf:'center',fontSize:7.5,fontWeight:'700',color:TECH.dim,backgroundColor:'rgba(255,255,255,.96)',paddingHorizontal:3},
