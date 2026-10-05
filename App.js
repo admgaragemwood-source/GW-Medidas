@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.14 — envia planta e paredes como vistas técnicas ao GW Assistente
+// GW Medidas 6.6.17 — corrige tela branca ao inserir vaso sanitário
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Line, Path, Rect, Text as SvgText, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Line, Path, Rect, Text as SvgText, Circle, Ellipse, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
