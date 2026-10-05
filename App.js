@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.18 — remove contornos externos e permite editar clientes
+// GW Medidas 6.6.19 — restaura base estável após regressão 6.6.18
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Line, Path, Rect, Text as SvgText, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Line, Path, Rect, Text as SvgText, Circle, Ellipse, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
@@ -943,7 +943,7 @@ function PlanPreviewStatic({room,width=360,height=230}){
 function FrontPreviewStatic({room,wallIndex=0,width=360,height=230}){
   const wallW=room.lengths[wallIndex]||3.2,wallH=room.height||2.65,px=Math.min((width-60)/wallW,(height-60)/wallH),
     objects=(room.elements||[]).filter(e=>elementWallIndex(e,room)===wallIndex&&(!isFreePlanType(e.type)||isInternalWall(e.type))&&(e.free!==true||isInternalWall(e.type))).map(e=>isInternalWall(e.type)?frontObjectForRoom(e,wallIndex,room):constrainElementToWallSegments(room,e)).sort((a,b)=>visualLayer(a)-visualLayer(b));
-  return <View style={{width,height,overflow:'hidden',borderRadius:12}}><TechnicalElevationBase wallW={wallW} wallH={wallH} px={px} width={width} height={height} objects={objects}/>{objects.map(o=>{const opening=isOpening(o.type),equip=isEquipment(o.type),reserved=isReservedSpace(o.type),structure=isStructure(o.type),point=isPoint(o.type),internal=isInternalWall(o.type),vw=internal?Math.max(5,o.width*px):Math.max(o.width*px,opening||equip||reserved?28:18),vh=internal?Math.max(20,o.height*px):(o.type==='Pia'?Math.max(o.height*px,12):Math.max(o.height*px,opening||equip||reserved?26:18)),x=27+o.left*px,y=46+(wallH-o.bottom-o.height)*px;return <View key={o.id} pointerEvents="none" style={{position:'absolute',left:x,top:y,width:vw,height:vh,borderWidth:internal?1.4:0,borderColor:internal?'#59636B':'transparent',backgroundColor:internal?'#D4D9DD':'transparent',zIndex:visualLayer(o)}}>{internal?null:<ElementVisual type={o.type} width={vw} height={vh}/>}</View>})}</View>;
+  return <View style={{width,height,overflow:'hidden',borderRadius:12}}><TechnicalElevationBase wallW={wallW} wallH={wallH} px={px} width={width} height={height} objects={objects}/>{objects.map(o=>{const opening=isOpening(o.type),equip=isEquipment(o.type),reserved=isReservedSpace(o.type),structure=isStructure(o.type),point=isPoint(o.type),internal=isInternalWall(o.type),vw=internal?Math.max(5,o.width*px):Math.max(o.width*px,opening||equip||reserved?28:18),vh=internal?Math.max(20,o.height*px):(o.type==='Pia'?Math.max(o.height*px,12):Math.max(o.height*px,opening||equip||reserved?26:18)),x=27+o.left*px,y=46+(wallH-o.bottom-o.height)*px;return <View key={o.id} pointerEvents="none" style={{position:'absolute',left:x,top:y,width:vw,height:vh,borderWidth:internal?1.4:1,borderColor:internal?'#59636B':'#5B6670',backgroundColor:internal?'#D4D9DD':point?'transparent':'rgba(255,255,255,.2)',zIndex:visualLayer(o)}}>{internal?null:<ElementVisual type={o.type} width={vw} height={vh}/>}</View>})}</View>;
 }
 function ExportPreview({project,room,onBack,onExport}){
   const [frontWall,setFrontWall]=useState(0),[photoIndex,setPhotoIndex]=useState(0);
@@ -1116,7 +1116,7 @@ function WallObject({obj,wallW,wallH,boardW,boardH,px,selected,onSelect,onEdit,o
   // dezenas de pixels para fora do objeto e acabava cobrindo o piso/área vazia,
   // impedindo o toque de chegar ao canvas para desselecionar e congelar a tela.
   const hitPad=10;
-  const visualStyle=[styles.objVisual,{width:vw,height:vh,position:'absolute',left:hitPad,top:hitPad,borderWidth:0,borderColor:'transparent',backgroundColor:'transparent'},internal&&styles.objStructure];
+  const visualStyle=[styles.objVisual,{width:vw,height:vh,position:'absolute',left:hitPad,top:hitPad},opening&&styles.objOpening,equip&&styles.objEquip,structure&&styles.objStructure,point&&styles.objPoint,reserved&&{borderStyle:'dashed',backgroundColor:'rgba(255,255,255,.55)'},selected&&styles.objSelected];
   return <GestureDetector gesture={objectGesture}><View style={[styles.objTouch,{left:x-hitPad,top:y-hitPad,width:vw+hitPad*2,height:vh+hitPad*2,zIndex:visualLayer(obj)}]}>
     <View style={visualStyle}><ElementVisual type={obj.type} width={vw} height={vh}/></View>
     {selected?<View pointerEvents="none" style={[styles.techDimLine,{left:hitPad,top:hitPad+vh+8,width:Math.max(vw,48)}]}><View style={styles.techDimTick}/><Text style={styles.techDimText}>{numFmt(obj.width)} m</Text><View style={styles.techDimTick}/></View>:null}
@@ -1396,23 +1396,9 @@ const exportWebPdf=async(html,fileName)=>{
   }
 };
 
-function ClientsScreen({projects,quickJobs=[],onBack,onOpenClient}){
-  const clients=useMemo(()=>{const m=new Map();projects.forEach(p=>{const k=(p.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0,phone:'',address:''};if(p.gwSourceType==='orcamento')cur.budgets+=1;else if(p.gwSourceType==='projeto')cur.projects+=1;else cur.local+=1;cur.rooms+=(p.rooms||[]).length;cur.phone=cur.phone||p.clientPhone||p.phone||'';cur.address=cur.address||p.clientAddress||p.address||'';m.set(k,cur)});quickJobs.forEach(q=>{const k=(q.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0,quick:0,phone:'',address:''};cur.quick=(cur.quick||0)+1;cur.phone=cur.phone||q.phone||'';cur.address=cur.address||q.address||'';m.set(k,cur)});return [...m.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'))},[projects,quickJobs]);
-  return <View style={styles.screen}><Header title="Clientes" subtitle={`${clients.length} cliente${clients.length!==1?'s':''}`} onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage}>{clients.length?clients.map(c=><Pressable key={c.name} onPress={()=>onOpenClient?.(c)} style={styles.infoCard}><View style={styles.infoIcon}><Text style={styles.infoIconText}>{c.name.slice(0,1).toUpperCase()}</Text></View><View style={{flex:1}}><Text style={styles.infoTitle}>{c.name}</Text><Text style={styles.infoText}>{c.budgets} orçamento{c.budgets!==1?'s':''} · {c.projects} projeto{c.projects!==1?'s':''} · {c.rooms} ambiente{c.rooms!==1?'s':''}{c.quick?` · ${c.quick} medição rápida${c.quick!==1?'s':''}`:''}{c.local?` · ${c.local} local`:''}</Text></View><Text style={styles.chevSmall}>›</Text></Pressable>):<Text style={styles.emptyHomeText}>Os clientes aparecerão aqui conforme você criar medições ou sincronizar o GW.</Text>}</ScrollView></View>
-}
-
-function ClientEditScreen({client,onBack,onSave}){
-  const [name,setName]=useState(client?.name||'');
-  const [phone,setPhone]=useState(client?.phone||'');
-  const [address,setAddress]=useState(client?.address||'');
-  const ready=!!name.trim();
-  return <View style={styles.screen}><Header title="Editar cliente" subtitle="Dados do cliente" onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage} keyboardShouldPersistTaps="handled">
-    <Field label="Nome" value={name} onChangeText={setName} placeholder="Nome do cliente"/>
-    <Field label="Telefone (opcional)" value={phone} onChangeText={setPhone} placeholder="(15) 99999-9999"/>
-    <Field label="Endereço (opcional)" value={address} onChangeText={setAddress} placeholder="Rua, número, bairro"/>
-    <Button disabled={!ready} title="Salvar alterações" onPress={()=>onSave?.({oldName:client?.name||'',name:name.trim(),phone:phone.trim(),address:address.trim()})}/>
-    <Text style={[styles.infoText,{marginTop:8}]}>As alterações são aplicadas às medições deste cliente no GW Medidas antes do próximo envio ao GW Assistente.</Text>
-  </ScrollView></View>
+function ClientsScreen({projects,quickJobs=[],onBack}){
+  const clients=useMemo(()=>{const m=new Map();projects.forEach(p=>{const k=(p.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0};if(p.gwSourceType==='orcamento')cur.budgets+=1;else if(p.gwSourceType==='projeto')cur.projects+=1;else cur.local+=1;cur.rooms+=(p.rooms||[]).length;m.set(k,cur)});quickJobs.forEach(q=>{const k=(q.client||'Sem cliente').trim()||'Sem cliente',cur=m.get(k)||{name:k,projects:0,budgets:0,local:0,rooms:0,quick:0};cur.quick=(cur.quick||0)+1;m.set(k,cur)});return [...m.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'))},[projects,quickJobs]);
+  return <View style={styles.screen}><Header title="Clientes" subtitle={`${clients.length} cliente${clients.length!==1?'s':''}`} onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage}>{clients.length?clients.map(c=><View key={c.name} style={styles.infoCard}><View style={styles.infoIcon}><Text style={styles.infoIconText}>{c.name.slice(0,1).toUpperCase()}</Text></View><View style={{flex:1}}><Text style={styles.infoTitle}>{c.name}</Text><Text style={styles.infoText}>{c.budgets} orçamento{c.budgets!==1?'s':''} · {c.projects} projeto{c.projects!==1?'s':''} · {c.rooms} ambiente{c.rooms!==1?'s':''}{c.quick?` · ${c.quick} medição rápida${c.quick!==1?'s':''}`:''}{c.local?` · ${c.local} local`:''}</Text></View></View>):<Text style={styles.emptyHomeText}>Os clientes aparecerão aqui conforme você criar medições ou sincronizar o GW.</Text>}</ScrollView></View>
 }
 function HelpScreen({onBack}){
   const rows=[['1','Crie um projeto e um ambiente.'],['2','Informe as paredes e medidas do cômodo.'],['3','Adicione portas, janelas, equipamentos e pontos.'],['4','Toque fora dos itens para liberar zoom e navegação.'],['5','Toque em um item para selecionar; depois ajuste ou mova.'],['6','Use Resumo e Exportar para fechar a medição.']];
@@ -1674,21 +1660,9 @@ async function dehydrateQuickJobs(jobs){
 }
 
 export default function App(){
-  const [ready,setReady]=useState(false),[screen,setScreen]=useState('welcome'),[projects,setProjects]=useState([]),[quickJobs,setQuickJobs]=useState([]),[activeProjectId,setActiveProjectId]=useState(null),[activeRoomId,setActiveRoomId]=useState(null),[draftMeta,setDraftMeta]=useState(null),[quickJob,setQuickJob]=useState(null),[gwSending,setGwSending]=useState(false),[gwLinking,setGwLinking]=useState(false),[editingClient,setEditingClient]=useState(null),[gwLinkModal,setGwLinkModal]=useState({visible:false,targets:[],error:'',canCreate:false});
+  const [ready,setReady]=useState(false),[screen,setScreen]=useState('welcome'),[projects,setProjects]=useState([]),[quickJobs,setQuickJobs]=useState([]),[activeProjectId,setActiveProjectId]=useState(null),[activeRoomId,setActiveRoomId]=useState(null),[draftMeta,setDraftMeta]=useState(null),[quickJob,setQuickJob]=useState(null),[gwSending,setGwSending]=useState(false),[gwLinking,setGwLinking]=useState(false),[gwLinkModal,setGwLinkModal]=useState({visible:false,targets:[],error:'',canCreate:false});
   useEffect(()=>{(async()=>{const [v,q2,q1]=await Promise.all([AsyncStorage.getItem(STORE_KEY),AsyncStorage.getItem(QUICK_STORE),AsyncStorage.getItem('gw-medidas-quick-v1')]);if(v)try{setProjects(JSON.parse(v))}catch{};const raw=q2||q1;if(raw)try{setQuickJobs(await webPhotoDbHydrate(JSON.parse(raw)))}catch{};setReady(true)})()},[]);
   const persist=async(next)=>{setProjects(next);await AsyncStorage.setItem(STORE_KEY,JSON.stringify(next))};
-  const saveClientEdits=async data=>{
-    const oldName=String(data?.oldName||'').trim(),name=String(data?.name||'').trim();
-    if(!name)return;
-    const same=v=>String(v||'').trim().toLowerCase()===oldName.toLowerCase();
-    const nextProjects=projects.map(p=>same(p.client)?{...p,client:name,clientPhone:data.phone||'',clientAddress:data.address||'',updatedAt:Date.now()}:p);
-    const nextQuick=quickJobs.map(q=>same(q.client)?{...q,client:name,phone:data.phone||'',address:data.address||'',updatedAt:Date.now()}:q);
-    setProjects(nextProjects);setQuickJobs(nextQuick);
-    await AsyncStorage.setItem(STORE_KEY,JSON.stringify(nextProjects));
-    const cleanQuick=await dehydrateQuickJobs(nextQuick);
-    await AsyncStorage.setItem(QUICK_STORE,JSON.stringify(cleanQuick));
-    setEditingClient(null);setScreen('clients');
-  };
   const persistQuick=async(job,keepActive=true)=>{const merged=[job,...quickJobs.filter(q=>q.id!==job.id)];const cleanNext=await dehydrateQuickJobs(merged);await AsyncStorage.setItem(QUICK_STORE,JSON.stringify(cleanNext));const hydrated=await webPhotoDbHydrate(cleanNext);setQuickJobs(hydrated);if(keepActive)setQuickJob(hydrated.find(q=>q.id===job.id)||job);return hydrated.find(q=>q.id===job.id)||job}
   const project=projects.find(p=>p.id===activeProjectId), room=project?.rooms?.find(r=>r.id===activeRoomId);
   const updateRoom=async(nextRoom,announce=false)=>{const next=projects.map(p=>p.id!==activeProjectId?p:{...p,updatedAt:Date.now(),rooms:p.rooms.map(r=>r.id===nextRoom.id?nextRoom:r)});await persist(next);if(announce)Alert.alert('Salvo','Medição salva.');};
@@ -1854,8 +1828,7 @@ export default function App(){
   else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen(quickJob?.id?'quickDetail':'home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
   else if(screen==='home')content=<Home onQuick={()=>{setQuickJob(null);setScreen('quickForm')}} onNew={()=>setScreen('new')} onProjects={()=>setScreen('projectsLibrary')} onClients={()=>setScreen('clients')} onHelp={()=>setScreen('help')} onMore={()=>setScreen('more')}/>;
   else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickDetail')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onDeleteQuick={deleteQuickJob} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
-  else if(screen==='clients')content=<ClientsScreen projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onOpenClient={c=>{setEditingClient(c);setScreen('clientEdit')}}/>;
-  else if(screen==='clientEdit')content=<ClientEditScreen client={editingClient} onBack={()=>setScreen('clients')} onSave={saveClientEdits}/>;
+  else if(screen==='clients')content=<ClientsScreen projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')}/>;
   else if(screen==='help')content=<HelpScreen onBack={()=>setScreen('home')}/>;
   else if(screen==='more')content=<MoreScreen onBack={()=>setScreen('home')} onNew={()=>setScreen('new')} onIntegration={()=>setScreen('gwIntegration')}/>;
   else if(screen==='gwIntegration')content=<GwIntegrationScreen projects={projects} onBack={()=>setScreen('more')} onSynced={persist}/>;
