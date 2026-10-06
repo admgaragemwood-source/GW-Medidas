@@ -436,7 +436,8 @@ async function quickAnnotatedImage(photo = {}) {
       } else if(m.kind==='area'){
         const a=px({x:m.x1,y:m.y1}), b=px({x:m.x2,y:m.y2}), x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(a.x-b.x),h=Math.abs(a.y-b.y);
         ctx.fillStyle='rgba(22,119,242,.18)';ctx.fillRect(x,y,w,h);ctx.strokeRect(x,y,w,h);dot(x,y,6);dot(x+w,y+h,6);
-        label(m.value,x+w/2,y+h/2,130,36,'bold 18px Arial');
+        const areaText=/m²|m2/i.test(String(m.value||''))?String(m.value||''):`${String(m.value||'')} m²`;
+        label(areaText,x+w/2,y+h/2,150,36,'bold 18px Arial');
         if(m.widthValue) label(`${m.widthValue} m`,x+w/2,Math.max(18,y-20),92,28,'bold 14px Arial',BLUE);
         if(m.heightValue) label(`${m.heightValue} m`,Math.max(48,x-52),y+h/2,92,28,'bold 14px Arial',BLUE);
       } else if(m.kind==='text'){

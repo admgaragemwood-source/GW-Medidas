@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.22 — vínculo persistente com data e hora
+// GW Medidas 6.6.24 — identifica medições de área com m²
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1441,7 +1441,7 @@ function MoreScreen({onBack,onNew,onIntegration}){
   return <View style={styles.screen}><Header title="Mais" subtitle="GW Medidas" onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage}>
     <Pressable onPress={onNew} style={styles.moreAction}><Text style={styles.moreActionTitle}>＋ Nova medição</Text><Text style={styles.moreActionText}>Criar um novo ambiente ou projeto.</Text></Pressable>
     <Pressable onPress={onIntegration} style={[styles.moreAction,{backgroundColor:'#101820'}]}><Text style={styles.moreActionTitle}>↔ GW Assistente</Text><Text style={styles.moreActionText}>Sincronizar clientes, projetos e ambientes da sua conta GW.</Text></Pressable>
-    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.22</Text></View></View>
+    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.24</Text></View></View>
     <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>Integração com GW Assistente</Text><Text style={styles.infoText}>Clientes e projetos são sincronizados com o GW Medidas. Os levantamentos são enviados para Projeto > Dossiê Técnico > Medidas > Medidas do GW Medidas.</Text></View></View>
   </ScrollView></View>
 }
