@@ -407,7 +407,10 @@ export async function gwCreateProjectFromQuickMeasurement(job = {}) {
   }
   const projectId=makeGwId('projeto');
   const nowIso=new Date().toISOString();
-  const photos=(job.photos||[]).map((ph,i)=>({id:ph.id||`foto-${i+1}`,name:`Foto ${i+1}`,note:ph.note||'',marks:quickMarksForGw(ph.marks),hasImage:Boolean(ph.uri||ph.dataUri),localUri:ph.uri||'',savedAt:ph.savedAt||null}));
+  const photos=(job.photos||[]).map((ph,i)=>{
+    const image=ph.dataUri||((typeof ph.uri==='string'&&ph.uri.startsWith('data:'))?ph.uri:'');
+    return {id:ph.id||`foto-${i+1}`,name:`Foto ${i+1}`,note:ph.note||'',marks:quickMarksForGw(ph.marks),hasImage:Boolean(image),image,dataUri:image,uri:image,localUri:ph.uri||'',savedAt:ph.savedAt||null};
+  });
   const measurement={version:3,source:'gw-medidas',mode:'quick',syncedAt:nowIso,client:job.client||'',title:job.project||'Medição rápida',phone:job.phone||'',address:job.address||'',environments:[{id:`quick-${job.id||projectId}`,name:job.project||'Medição rápida',wallCount:0,lengths:[],height:0,notes:'',elements:[],photos,photoCount:photos.length,quickMeasurement:true}]};
   const projectName=String(job.project||'Medição rápida').trim();
   const projectData={id:projectId,nome:projectName,projeto:projectName,cliente:String(job.client).trim(),clienteId:clientData?.id||clientData?.__sourceId||null,origem:'GW Medidas',etapa:'Levantamento',progresso:0,levantamentoGW:measurement,levantamentoGWAtualizadoEm:nowIso,criadoEm:nowIso,atualizadoEm:nowIso};
@@ -442,7 +445,6 @@ export async function gwSendExportSnapshot(project = {}, snapshot = {}) {
   const technicalViews = Array.isArray(snapshot.technicalViews)
     ? snapshot.technicalViews
     : (Array.isArray(snapshot.pages) ? snapshot.pages : []);
-
   const exportarOriginal = {
     format: 'image/jpeg',
     image: snapshot.image,

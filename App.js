@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.20 — remove contornos com segurança e permite editar clientes
+// GW Medidas 6.6.21 — envia medição rápida e fotos ao GW Assistente
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1441,7 +1441,7 @@ function MoreScreen({onBack,onNew,onIntegration}){
   return <View style={styles.screen}><Header title="Mais" subtitle="GW Medidas" onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage}>
     <Pressable onPress={onNew} style={styles.moreAction}><Text style={styles.moreActionTitle}>＋ Nova medição</Text><Text style={styles.moreActionText}>Criar um novo ambiente ou projeto.</Text></Pressable>
     <Pressable onPress={onIntegration} style={[styles.moreAction,{backgroundColor:'#101820'}]}><Text style={styles.moreActionTitle}>↔ GW Assistente</Text><Text style={styles.moreActionText}>Sincronizar clientes, projetos e ambientes da sua conta GW.</Text></Pressable>
-    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.20</Text></View></View>
+    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.21</Text></View></View>
     <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>Integração com GW Assistente</Text><Text style={styles.infoText}>Clientes e projetos são sincronizados com o GW Medidas. Os levantamentos são enviados para Projeto > Dossiê Técnico > Medidas > Medidas do GW Medidas.</Text></View></View>
   </ScrollView></View>
 }
@@ -1507,10 +1507,10 @@ function confirmDelete(title,message,onConfirm){
 
 
 
-function QuickProjectScreen({job,onBack,onOpen,onDelete,onLinkToGw}){
+function QuickProjectScreen({job,onBack,onOpen,onDelete,onLinkToGw,gwLinking=false}){
   if(!job)return null;
   const photos=job.photos||[];
-  return <View style={styles.screen}><Header title={job.project||'Medição rápida'} subtitle={`${job.client||'Sem cliente'} · Medição local`} onBack={onBack} right={<Pressable onPress={onDelete} style={styles.deleteHeaderBtn}><Text style={styles.deleteHeaderText}>Excluir</Text></Pressable>}/><ScrollView style={{flex:1}} contentContainerStyle={styles.projectList}><View style={styles.gwSendCard}><View style={{flex:1}}><Text style={styles.gwSendTitle}>Medição local</Text><Text style={styles.gwSendText}>Esta medição ainda não tem destino no GW Assistente. Vincule-a para continuar o fluxo do projeto.</Text></View><Pressable onPress={onLinkToGw} style={styles.gwSendBtn}><Text style={styles.gwSendBtnText}>↔ Vincular ao GW Assistente</Text></Pressable></View><Text style={styles.sectionKicker}>FOTOS DO LEVANTAMENTO</Text>{photos.length?photos.map((ph,i)=><Pressable key={ph.id||i} onPress={onOpen} style={styles.quickSavedCard}><View style={styles.quickSavedThumb}>{ph.uri?<Image source={{uri:ph.uri}} style={StyleSheet.absoluteFillObject} resizeMode="cover"/>:<Text style={styles.quickSavedIcon}>📷</Text>}</View><View style={{flex:1}}><Text style={styles.infoTitle}>Foto {i+1}</Text><Text style={styles.infoText}>{(ph.marks||[]).length} marcação{(ph.marks||[]).length!==1?'ões':''}</Text><View style={styles.quickSavedPill}><Text style={styles.quickSavedPillText}>⚡ Medição rápida</Text></View></View><Text style={styles.chevSmall}>›</Text></Pressable>):<Pressable onPress={onOpen} style={styles.infoCard}><View style={styles.infoIcon}><Text style={styles.infoIconText}>📷</Text></View><View style={{flex:1}}><Text style={styles.infoTitle}>Adicionar primeira foto</Text><Text style={styles.infoText}>Abra a medição rápida para fotografar e medir.</Text></View><Text style={styles.chevSmall}>›</Text></Pressable>}</ScrollView></View>;
+  return <View style={styles.screen}><Header title={job.project||'Medição rápida'} subtitle={`${job.client||'Sem cliente'} · Medição local`} onBack={onBack} right={<Pressable onPress={onDelete} style={styles.deleteHeaderBtn}><Text style={styles.deleteHeaderText}>Excluir</Text></Pressable>}/><ScrollView style={{flex:1}} contentContainerStyle={styles.projectList}><View style={styles.gwSendCard}><View style={{flex:1}}><Text style={styles.gwSendTitle}>Medição local</Text><Text style={styles.gwSendText}>Esta medição ainda não tem destino no GW Assistente. Vincule-a para continuar o fluxo do projeto.</Text></View><Pressable disabled={gwLinking} onPress={onLinkToGw} style={[styles.gwSendBtn,gwLinking&&{opacity:.55}]}><Text style={styles.gwSendBtnText}>{gwLinking?'Enviando...':'↔ Vincular ao GW Assistente'}</Text></Pressable></View><Text style={styles.sectionKicker}>FOTOS DO LEVANTAMENTO</Text>{photos.length?photos.map((ph,i)=><Pressable key={ph.id||i} onPress={onOpen} style={styles.quickSavedCard}><View style={styles.quickSavedThumb}>{ph.uri?<Image source={{uri:ph.uri}} style={StyleSheet.absoluteFillObject} resizeMode="cover"/>:<Text style={styles.quickSavedIcon}>📷</Text>}</View><View style={{flex:1}}><Text style={styles.infoTitle}>Foto {i+1}</Text><Text style={styles.infoText}>{(ph.marks||[]).length} marcação{(ph.marks||[]).length!==1?'ões':''}</Text><View style={styles.quickSavedPill}><Text style={styles.quickSavedPillText}>⚡ Medição rápida</Text></View></View><Text style={styles.chevSmall}>›</Text></Pressable>):<Pressable onPress={onOpen} style={styles.infoCard}><View style={styles.infoIcon}><Text style={styles.infoIconText}>📷</Text></View><View style={{flex:1}}><Text style={styles.infoTitle}>Adicionar primeira foto</Text><Text style={styles.infoText}>Abra a medição rápida para fotografar e medir.</Text></View><Text style={styles.chevSmall}>›</Text></Pressable>}</ScrollView></View>;
 }
 
 function MeasurementModeHome({onBack,onQuick,onComplete}){
@@ -1879,7 +1879,12 @@ export default function App(){
     if(!quickJob)return;
     setGwLinking(true);
     try{
-      const result=await gwCreateProjectFromQuickMeasurement(quickJob);
+      const hydratedPhotos=(quickJob.photos||[]).map(ph=>{
+        const src=ph.dataUri||ph.uri||'';
+        return {...ph,dataUri:String(src).startsWith('data:')?src:(ph.dataUri||null),uri:src};
+      });
+      const payload={...quickJob,photos:hydratedPhotos};
+      const result=await gwCreateProjectFromQuickMeasurement(payload);
       const updated={...quickJob,gwSourceType:'projeto',gwProjectId:result.projectId,gwCompanyId:result.companyId,gwLinkedFromLocal:true,gwSyncAt:Date.now(),gwLastPushAt:result.syncedAt,updatedAt:Date.now()};
       await persistQuick(updated,true); setQuickJob(updated);
       Alert.alert('Enviado ao GW Assistente',`Projeto criado para ${quickJob.client}. A medição rápida foi enviada para Projeto > Medidas > Medidas do GW Medidas.`);
@@ -1890,7 +1895,7 @@ export default function App(){
   if(screen==='welcome')content=<Welcome onStart={()=>setScreen('home')}/>;
   else if(screen==='modeHome')content=<MeasurementModeHome onBack={()=>setScreen('welcome')} onQuick={()=>setScreen('quickForm')} onComplete={()=>setScreen('home')}/>;
   else if(screen==='quickForm')content=<QuickMeasurementForm onBack={()=>setScreen('home')} onContinue={j=>{setQuickJob(j);setScreen('quickPhoto')}}/>;
-  else if(screen==='quickDetail')content=<QuickProjectScreen job={quickJob} onBack={()=>setScreen('projectsLibrary')} onOpen={()=>setScreen('quickPhoto')} onDelete={()=>quickJob&&deleteQuickJob(quickJob.id)} onLinkToGw={linkQuickToGw} />;
+  else if(screen==='quickDetail')content=<QuickProjectScreen job={quickJob} onBack={()=>setScreen('projectsLibrary')} onOpen={()=>setScreen('quickPhoto')} onDelete={()=>quickJob&&deleteQuickJob(quickJob.id)} onLinkToGw={linkQuickToGw} gwLinking={gwLinking} />;
   else if(screen==='quickPhoto')content=<QuickPhotoMeasure job={quickJob} onBack={()=>setScreen(quickJob?.id?'quickDetail':'home')} onUpdate={setQuickJob} onSave={async j=>{await persistQuick(j,true)}} onFinish={async j=>{await persistQuick(j,false);setQuickJob(null);setScreen('projectsLibrary')}}/>;
   else if(screen==='home')content=<Home onQuick={()=>{setQuickJob(null);setScreen('quickForm')}} onNew={()=>setScreen('new')} onProjects={()=>setScreen('projectsLibrary')} onClients={()=>setScreen('clients')} onHelp={()=>setScreen('help')} onMore={()=>setScreen('more')}/>;
   else if(screen==='projectsLibrary')content=<ProjectsLibrary projects={projects} quickJobs={quickJobs} onBack={()=>setScreen('home')} onHome={()=>setScreen('home')} onOpenQuick={id=>{const q=quickJobs.find(x=>x.id===id);if(q){setQuickJob(q);setScreen('quickDetail')}}} onOpen={id=>{setActiveProjectId(id);setScreen('project')}} onDelete={deleteProject} onDeleteQuick={deleteQuickJob} onClients={()=>setScreen('clients')} onMore={()=>setScreen('more')}/>;
