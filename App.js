@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-// GW Medidas 6.6.24 — identifica medições de área com m²
+// GW Medidas 6.6.25 — identifica medições de área com m²
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1441,7 +1441,7 @@ function MoreScreen({onBack,onNew,onIntegration}){
   return <View style={styles.screen}><Header title="Mais" subtitle="GW Medidas" onBack={onBack}/><ScrollView contentContainerStyle={styles.simplePage}>
     <Pressable onPress={onNew} style={styles.moreAction}><Text style={styles.moreActionTitle}>＋ Nova medição</Text><Text style={styles.moreActionText}>Criar um novo ambiente ou projeto.</Text></Pressable>
     <Pressable onPress={onIntegration} style={[styles.moreAction,{backgroundColor:'#101820'}]}><Text style={styles.moreActionTitle}>↔ GW Assistente</Text><Text style={styles.moreActionText}>Sincronizar clientes, projetos e ambientes da sua conta GW.</Text></Pressable>
-    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.24</Text></View></View>
+    <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>GW Medidas</Text><Text style={styles.infoText}>Medição técnica para marcenaria · versão 6.6.25</Text></View></View>
     <View style={styles.infoCard}><View style={{flex:1}}><Text style={styles.infoTitle}>Integração com GW Assistente</Text><Text style={styles.infoText}>Clientes e projetos são sincronizados com o GW Medidas. Os levantamentos são enviados para Projeto > Dossiê Técnico > Medidas > Medidas do GW Medidas.</Text></View></View>
   </ScrollView></View>
 }
@@ -1890,7 +1890,7 @@ export default function App(){
       const result=await gwCreateProjectFromQuickMeasurement(payload);
       const updated={...quickJob,gwSourceType:'projeto',gwProjectId:result.projectId,gwCompanyId:result.companyId,gwLinkedFromLocal:true,gwSyncAt:Date.now(),gwLastPushAt:result.syncedAt,updatedAt:Date.now()};
       await persistQuick(updated,true); setQuickJob(updated);
-      Alert.alert('Enviado ao GW Assistente',`Projeto criado para ${quickJob.client}. A medição rápida foi enviada para Projeto > Medidas > Medidas do GW Medidas.`);
+      Alert.alert(result.updated?'Atualizado no GW Assistente':'Enviado ao GW Assistente',result.updated?'A medição rápida foi atualizada no mesmo projeto, sem criar outro cadastro.':`Projeto criado para ${quickJob.client}. A medição rápida foi enviada para Projeto > Medidas > Medidas do GW Medidas.`);
     }catch(e){console.warn(e);Alert.alert('GW Assistente',e?.message||'Não consegui enviar esta medição rápida.');}finally{setGwLinking(false)}
   };
   if(!ready)return <AppFrame><View style={styles.loading}><Text style={styles.brand}><Text style={{color:INK}}>GW</Text> <Text style={{color:BLUE}}>MEDIDAS</Text></Text></View></AppFrame>;

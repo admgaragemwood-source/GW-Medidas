@@ -465,30 +465,115 @@ async function quickAnnotatedImage(photo = {}) {
 export async function gwCreateProjectFromQuickMeasurement(job = {}) {
   if (!gwSupabase) throw new Error('Integração GW não configurada.');
   if (!String(job?.client || '').trim()) throw new Error('Informe o nome do cliente antes de enviar.');
+
   const session = await gwGetSession();
   if (!session?.user) throw new Error('Conecte sua conta do GW Assistente antes de enviar.');
-  const workspace = await gwLoadWorkspaceProjects();
-  const companyId = workspace.companyId;
+
+  // Atualização usa obrigatoriamente o mesmo projeto. Nunca gera um novo ID.
+  const updating = Boolean(job?.gwProjectId && job?.gwCompanyId);
+  let companyId = updating ? String(job.gwCompanyId) : '';
+  if (!companyId) {
+    const { data: membership, error: membershipError } = await gwSupabase
+      .from('gw_memberships')
+      .select('company_id')
+      .eq('user_id', session.user.id)
+      .eq('active', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (membershipError) throw membershipError;
+    companyId = membership?.company_id || '';
+  }
+  if (!companyId) throw new Error('Não encontrei a empresa vinculada a esta conta no GW Assistente.');
+
+  // Busca somente clientes; não baixa gw_projetos inteiro para criar/atualizar uma medição rápida.
+  const { data: clientRows, error: clientsError } = await gwSupabase
+    .from('gw_clientes')
+    .select('source_id,data')
+    .eq('company_id', companyId);
+  if (clientsError) throw clientsError;
+
   const targetName = normalizeName(job.client);
-  let clientData = (workspace.clientes || []).find(c => normalizeName(c?.nome || c?.name) === targetName) || null;
+  let clientData = (clientRows || [])
+    .map(row => ({ ...(row?.data || {}), __sourceId: row?.source_id }))
+    .find(c => normalizeName(c?.nome || c?.name) === targetName) || null;
+
   let clientCreated = false;
   if (!clientData) {
     const clientId=makeGwId('cliente');
     clientData={id:clientId,nome:String(job.client).trim(),telefone:job.phone||'',endereco:job.address||'',ultimaInteracao:'Hoje',proximaAcao:'Definir próxima ação',origem:'GW Medidas',criadoEm:new Date().toISOString()};
-    const {error}=await gwSupabase.from('gw_clientes').upsert({company_id:companyId,source_id:clientId,data:clientData},{onConflict:'company_id,source_id'}); if(error)throw error; clientCreated=true;
+    const {error}=await gwSupabase.from('gw_clientes').upsert(
+      {company_id:companyId,source_id:clientId,data:clientData},
+      {onConflict:'company_id,source_id'}
+    );
+    if(error)throw error;
+    clientCreated=true;
   }
-  const projectId=makeGwId('projeto');
+
+  const projectId = updating ? String(job.gwProjectId) : makeGwId('projeto');
   const nowIso=new Date().toISOString();
+
+  // IMPORTANTE: guarda a foto anotada UMA única vez.
+  // Antes a mesma base64 era repetida em image/dataUri/uri/originalImage.
   const photos=await Promise.all((job.photos||[]).map(async(ph,i)=>{
-    const originalImage=ph.dataUri||((typeof ph.uri==='string'&&ph.uri.startsWith('data:'))?ph.uri:'');
     const image=await quickAnnotatedImage(ph);
-    return {id:ph.id||`foto-${i+1}`,name:`Foto ${i+1}`,note:ph.note||'',marks:quickMarksForGw(ph.marks),hasImage:Boolean(image),image,dataUri:image,uri:image,originalImage,localUri:ph.uri||'',savedAt:ph.savedAt||null,annotated:true};
+    return {
+      id:ph.id||`foto-${i+1}`,
+      name:`Foto ${i+1}`,
+      note:ph.note||'',
+      marks:quickMarksForGw(ph.marks),
+      hasImage:Boolean(image),
+      image,
+      savedAt:ph.savedAt||null,
+      annotated:true
+    };
   }));
-  const measurement={version:3,source:'gw-medidas',mode:'quick',syncedAt:nowIso,client:job.client||'',title:job.project||'Medição rápida',phone:job.phone||'',address:job.address||'',environments:[{id:`quick-${job.id||projectId}`,name:job.project||'Medição rápida',wallCount:0,lengths:[],height:0,notes:'',elements:[],photos,photoCount:photos.length,quickMeasurement:true}]};
+
+  const measurement={
+    version:4,
+    source:'gw-medidas',
+    mode:'quick',
+    syncedAt:nowIso,
+    client:job.client||'',
+    title:job.project||'Medição rápida',
+    phone:job.phone||'',
+    address:job.address||'',
+    environments:[{
+      id:`quick-${job.id||projectId}`,
+      name:job.project||'Medição rápida',
+      wallCount:0,lengths:[],height:0,notes:'',elements:[],
+      photos,photoCount:photos.length,quickMeasurement:true
+    }]
+  };
+
   const projectName=String(job.project||'Medição rápida').trim();
-  const projectData={id:projectId,nome:projectName,projeto:projectName,cliente:String(job.client).trim(),clienteId:clientData?.id||clientData?.__sourceId||null,origem:'GW Medidas',etapa:'Levantamento',progresso:0,levantamentoGW:measurement,levantamentoGWAtualizadoEm:nowIso,criadoEm:nowIso,atualizadoEm:nowIso};
-  const {error:projectError}=await gwSupabase.from('gw_projetos').upsert({company_id:companyId,source_id:projectId,data:projectData},{onConflict:'company_id,source_id'}); if(projectError)throw projectError;
-  return {companyId,projectId,clientId:clientData?.id||clientData?.__sourceId||null,clientCreated,syncedAt:nowIso,photos:photos.length};
+  const projectData={
+    id:projectId,
+    nome:projectName,
+    projeto:projectName,
+    cliente:String(job.client).trim(),
+    clienteId:clientData?.id||clientData?.__sourceId||null,
+    origem:'GW Medidas',
+    etapa:'Levantamento',
+    progresso:0,
+    levantamentoGW:measurement,
+    levantamentoGWAtualizadoEm:nowIso,
+    criadoEm:job?.gwCreatedAt||nowIso,
+    atualizadoEm:nowIso
+  };
+
+  const {error:projectError}=await gwSupabase.from('gw_projetos').upsert(
+    {company_id:companyId,source_id:projectId,data:projectData},
+    {onConflict:'company_id,source_id'}
+  );
+  if(projectError)throw projectError;
+
+  return {
+    companyId,projectId,
+    clientId:clientData?.id||clientData?.__sourceId||null,
+    clientCreated,syncedAt:nowIso,photos:photos.length,
+    updated:updating
+  };
 }
 
 export async function gwSendExportSnapshot(project = {}, snapshot = {}) {
